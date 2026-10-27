@@ -1,0 +1,560 @@
+using System.Net;
+using System.Net.Sockets;
+using Ludo.Application.Abstractions;
+using Ludo.Application.Common;
+using Ludo.Application.Protocol;
+using Ludo.Application.Session;
+using Ludo.Infrastructure.Crypto;
+using Ludo.Infrastructure.Networking;
+
+namespace Ludo.Application.Tests;
+
+/// <summary>End-to-end: real TCP peers on loopback play whole games driven by bots.</summary>
+public sealed class PeerSessionTests
+{
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    public async Task Any_member_starts_a_game_that_players_finish_and_spectators_follow(int playerCount)
+    {
+        // One extra member declines and watches; a member who is not the host runs the game.
+        var peers = Enumerable.Range(0, playerCount + 1).Select(i => new TestPeer($"P{i}")).ToArray();
+        try
+        {
+            await FormLobbyAsync(peers);
+            var initiator = peers[1];
+            var spectator = peers[0];
+            var players = peers.Where(p => p != spectator).ToArray();
+
+            await initiator.App.ProposeGame.ExecuteAsync();
+            await WaitUntil(() => peers.All(p => p.Latest.Match?.Phase == MatchPhaseView.Inviting), "invite did not reach everyone");
+            foreach (var player in players.Where(p => p != initiator))
+            {
+                await player.App.AcceptInvite.ExecuteAsync();
+            }
+
+            await spectator.App.DeclineInvite.ExecuteAsync();
+            await WaitUntil(
+                () => initiator.Latest.Match!.CanStart
+                    && initiator.Latest.Match.Invitees.Count(i => i.Answer == InviteAnswer.Accepted) == playerCount,
+                "answers never arrived");
+            await initiator.App.StartGame.ExecuteAsync();
+            await WaitUntil(() => players.All(p => p.Latest.Match is { IsPlaying: true, Game: not null }), "not every player started");
+            Assert.False(spectator.Latest.Match!.IsPlaying);
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+            await Task.WhenAll(players.Select(p => p.PlayAsync(timeout.Token)));
+            await WaitUntil(() => spectator.Latest.Match?.Phase == MatchPhaseView.Finished, "spectator never saw the end");
+
+            var results = peers.Select(p => Describe(p.Latest.Match!.Game!)).ToArray();
+            Assert.All(results, r => Assert.Equal(results[0], r));
+            Assert.All(peers, p => Assert.DoesNotContain(p.Latest.Log, l => l.Contains("Warning", StringComparison.Ordinal)));
+            Assert.Equal(playerCount, peers[0].Latest.Match!.Game!.Seats.Count(s => s.Rank is not null));
+
+            // The lobby outlives the game, so anyone can start the next one.
+            Assert.All(peers, p => Assert.True(p.Latest.CanProposeGame));
+        }
+        finally
+        {
+            await DisposeAllAsync(peers);
+        }
+    }
+
+    [Fact]
+    public async Task A_player_leaving_the_game_stays_in_the_lobby_and_watches()
+    {
+        var peers = Enumerable.Range(0, 3).Select(i => new TestPeer($"P{i}")).ToArray();
+        try
+        {
+            await FormLobbyAsync(peers);
+            await StartGameAsync(initiator: peers[0], peers);
+
+            await peers[1].App.LeaveGame.ExecuteAsync();
+
+            // Seats follow join order, which depends on whose greeting reached the host first.
+            await WaitUntil(
+                () => peers.All(p => p.Latest.Match?.Game?.Seats.Single(s => s.Name == "P1").Standing == SeatStanding.Left),
+                "leaver was not dropped everywhere");
+            Assert.False(peers[1].Latest.Match!.IsPlaying);
+            Assert.Equal(3, peers[0].Latest.Members.Count);
+            await WaitUntil(() => !peers[0].Latest.Members.Single(m => m.Name == "P1").InGame, "leaver still shown as playing");
+
+            // The leaver keeps following the game between the other two.
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+            await Task.WhenAll(peers[0].PlayAsync(timeout.Token), peers[2].PlayAsync(timeout.Token));
+            await WaitUntil(() => peers[1].Latest.Match?.Phase == MatchPhaseView.Finished, "leaver stopped following");
+            Assert.Equal(Describe(peers[0].Latest.Match!.Game!), Describe(peers[1].Latest.Match!.Game!));
+        }
+        finally
+        {
+            await DisposeAllAsync(peers);
+        }
+    }
+
+    [Fact]
+    public async Task The_initiator_can_stop_the_game_for_everyone()
+    {
+        var peers = Enumerable.Range(0, 3).Select(i => new TestPeer($"P{i}")).ToArray();
+        try
+        {
+            await FormLobbyAsync(peers);
+            await StartGameAsync(initiator: peers[2], peers);
+
+            await Assert.ThrowsAsync<SessionException>(() => peers[0].App.StopGame.ExecuteAsync());
+            await peers[2].App.StopGame.ExecuteAsync();
+
+            await WaitUntil(() => peers.All(p => p.Latest.Match?.Phase == MatchPhaseView.Stopped), "stop did not reach everyone");
+            Assert.All(peers, p => Assert.Equal(SessionStage.Lobby, p.Latest.Stage));
+            Assert.All(peers, p => Assert.True(p.Latest.CanProposeGame));
+        }
+        finally
+        {
+            await DisposeAllAsync(peers);
+        }
+    }
+
+    [Fact]
+    public async Task The_lobby_hands_over_to_a_new_host_and_the_game_carries_on()
+    {
+        var peers = Enumerable.Range(0, 3).Select(i => new TestPeer($"P{i}")).ToArray();
+        try
+        {
+            await FormLobbyAsync(peers);
+            await StartGameAsync(initiator: peers[1], peers);
+
+            // The host, a player but not the initiator, quits the app.
+            await peers[0].App.LeaveSession.ExecuteAsync();
+
+            // The initiator sits first; the others follow join order, so find the old host by name.
+            await WaitUntil(
+                () => peers.Skip(1).All(p => p.Latest.Match?.Game?.Seats.Single(s => s.Name == "P0").Standing == SeatStanding.Left),
+                "remaining peers did not drop the host");
+            await WaitUntil(
+                () => peers.Skip(1).Count(p => p.Latest.IsHost) == 1
+                    && peers.Skip(1).All(p => p.Latest.Members.Count == 2 && p.Latest.Members.Count(m => m.IsHost) == 1),
+                "no new host took over");
+            Assert.All(peers.Skip(1), p => Assert.Equal(MatchPhaseView.Playing, p.Latest.Match!.Phase));
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+            await Task.WhenAll(peers[1].PlayAsync(timeout.Token), peers[2].PlayAsync(timeout.Token));
+            Assert.Equal(Describe(peers[1].Latest.Match!.Game!), Describe(peers[2].Latest.Match!.Game!));
+        }
+        finally
+        {
+            await DisposeAllAsync(peers);
+        }
+    }
+
+    [Fact]
+    public async Task Someone_joining_mid_game_can_watch_it()
+    {
+        var peers = Enumerable.Range(0, 2).Select(i => new TestPeer($"P{i}")).ToArray();
+        var latecomer = new TestPeer("Late");
+        try
+        {
+            var port = await FormLobbyAsync(peers);
+            await StartGameAsync(initiator: peers[1], peers);
+            await peers[1].App.RollDice.ExecuteAsync();
+            await WaitUntil(() => peers[1].Latest.Match?.Game?.RollCount == 1, "roll never completed");
+
+            await latecomer.App.JoinLobby.ExecuteAsync(latecomer.Name, "127.0.0.1", port);
+
+            await WaitUntil(
+                () => latecomer.Latest.Match is { Phase: MatchPhaseView.Playing, Game.RollCount: >= 1 },
+                "latecomer never got the game");
+            Assert.False(latecomer.Latest.Match!.IsPlaying);
+            Assert.False(latecomer.Latest.CanProposeGame);
+        }
+        finally
+        {
+            await latecomer.App.DisposeAsync();
+            await DisposeAllAsync(peers);
+        }
+    }
+
+    [Fact]
+    public async Task Crossing_invites_settle_on_one()
+    {
+        var peers = Enumerable.Range(0, 3).Select(i => new TestPeer($"P{i}")).ToArray();
+        try
+        {
+            await FormLobbyAsync(peers);
+
+            await Task.WhenAll(peers[1].App.ProposeGame.ExecuteAsync(), peers[2].App.ProposeGame.ExecuteAsync());
+
+            await WaitUntil(
+                () => peers.All(p => p.Latest.Match is { Phase: MatchPhaseView.Inviting } m && m.Id == peers[0].Latest.Match?.Id),
+                "peers disagree on the invite");
+        }
+        finally
+        {
+            await DisposeAllAsync(peers);
+        }
+    }
+
+    [Fact]
+    public async Task Host_falls_back_to_a_free_port_when_its_port_is_taken()
+    {
+        var squatter = new TcpListener(IPAddress.IPv6Any, 0) { ExclusiveAddressUse = true };
+        squatter.Server.DualMode = true;
+        squatter.Start();
+        var takenPort = ((IPEndPoint)squatter.LocalEndpoint).Port;
+        var host = new TestPeer("Host");
+        try
+        {
+            await host.App.HostLobby.ExecuteAsync(host.Name, takenPort);
+
+            Assert.Equal(SessionStage.Lobby, host.Latest.Stage);
+            Assert.DoesNotContain(host.Latest.JoinAddresses, a => a.EndsWith($":{takenPort}", StringComparison.Ordinal));
+        }
+        finally
+        {
+            squatter.Stop();
+            await host.App.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Auto_lobby_joins_a_discovered_lobby()
+    {
+        var discovery = new ScriptedDiscovery();
+        var host = new TestPeer("Host");
+        var guest = new TestPeer("Guest", discovery);
+        try
+        {
+            var port = FreePort();
+            await host.App.HostLobby.ExecuteAsync(host.Name, port);
+
+            guest.App.AutoLobby.Start(guest.Name);
+            discovery.Announce(new DiscoveredLobby(Guid.NewGuid(), host.Name, "127.0.0.1", port, 1, 8, ProtocolInfo.Version));
+
+            await WaitUntil(() => host.Latest.Members.Count == 2, "guest never auto-joined");
+            Assert.False(guest.Latest.IsHost);
+        }
+        finally
+        {
+            await guest.App.DisposeAsync();
+            await host.App.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Auto_lobby_warns_about_a_different_version_instead_of_joining_it()
+    {
+        var discovery = new ScriptedDiscovery();
+        var guest = new TestPeer("Guest", discovery);
+        try
+        {
+            guest.App.AutoLobby.Start(guest.Name);
+            discovery.Announce(new DiscoveredLobby(Guid.NewGuid(), "OldPc", "10.0.0.9", 47777, 1, 8, ProtocolInfo.Version - 1));
+
+            await WaitUntil(() => guest.Notices.Any(n => n.Contains("older version", StringComparison.Ordinal)), "no version warning");
+            await WaitUntil(() => guest.Latest.IsHost, "should have opened its own lobby");
+        }
+        finally
+        {
+            await guest.App.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Auto_lobby_opens_a_lobby_when_none_is_found()
+    {
+        var loner = new TestPeer("Loner", new ScriptedDiscovery());
+        try
+        {
+            loner.App.AutoLobby.Start(loner.Name);
+
+            await WaitUntil(() => loner.Latest.Stage == SessionStage.Lobby, "never opened a lobby");
+            Assert.True(loner.Latest.IsHost);
+        }
+        finally
+        {
+            await loner.App.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task A_host_moves_to_a_lobby_it_outranks_when_that_lobby_cannot_hear_it()
+    {
+        var discovery = new ScriptedDiscovery();
+        var deaf = new TestPeer("Deaf");
+        var loner = new TestPeer("Loner", discovery);
+        using var announcing = new CancellationTokenSource();
+        try
+        {
+            var port = FreePort();
+            await deaf.App.HostLobby.ExecuteAsync(deaf.Name, port);
+            loner.App.AutoLobby.Start(loner.Name);
+            await WaitUntil(() => loner.Latest.IsHost, "loner never opened its own lobby");
+
+            // Same size, highest possible id: the loner outranks it, but it never hears the loner's beacons.
+            var deafLobby = new DiscoveredLobby(Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"), deaf.Name, "127.0.0.1", port, 1, 8, ProtocolInfo.Version);
+            _ = Task.Run(async () =>
+            {
+                while (!announcing.IsCancellationRequested)
+                {
+                    discovery.Announce(deafLobby);
+                    await Task.Delay(500);
+                }
+            });
+
+            await WaitUntil(() => deaf.Latest.Members.Count == 2, "loner never went to the lobby that could not hear it");
+            Assert.False(loner.Latest.IsHost);
+        }
+        finally
+        {
+            announcing.Cancel();
+            await loner.App.DisposeAsync();
+            await deaf.App.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task A_lone_host_merges_into_a_bigger_lobby()
+    {
+        var discovery = new ScriptedDiscovery();
+        var host = new TestPeer("Host");
+        var member = new TestPeer("Member");
+        var loner = new TestPeer("Loner", discovery);
+        try
+        {
+            var port = FreePort();
+            await host.App.HostLobby.ExecuteAsync(host.Name, port);
+            await member.App.JoinLobby.ExecuteAsync(member.Name, "127.0.0.1", port);
+            await WaitUntil(() => host.Latest.Members.Count == 2, "member never joined");
+
+            loner.App.AutoLobby.Start(loner.Name);
+            await WaitUntil(() => loner.Latest.IsHost, "loner never opened its own lobby");
+
+            discovery.Announce(new DiscoveredLobby(Guid.NewGuid(), host.Name, "127.0.0.1", port, 2, 8, ProtocolInfo.Version));
+
+            await WaitUntil(() => host.Latest.Members.Count == 3, "loner never moved to the bigger lobby");
+            Assert.False(loner.Latest.IsHost);
+        }
+        finally
+        {
+            await loner.App.DisposeAsync();
+            await member.App.DisposeAsync();
+            await host.App.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Lobby_members_rename_and_chat_with_everyone()
+    {
+        var peers = Enumerable.Range(0, 3).Select(i => new TestPeer($"P{i}")).ToArray();
+        try
+        {
+            await FormLobbyAsync(peers);
+
+            await peers[2].App.RenamePlayer.ExecuteAsync("  Zed ");
+            await WaitUntil(
+                () => peers.All(p => p.Latest.Members.Any(m => m.Name == "Zed") && p.Latest.Members.All(m => m.Name != "P2")),
+                "rename did not reach everyone");
+            Assert.Equal("Zed", peers[2].Latest.LocalName);
+
+            await peers[2].App.SendChat.ExecuteAsync("hello\nall");
+            await peers[1].App.SendChat.ExecuteAsync("hi Zed");
+            await WaitUntil(() => peers.All(p => p.Latest.Chat.Count == 2), "chat did not reach everyone");
+
+            Assert.All(peers, p => Assert.Contains(p.Latest.Chat, l => l is { Sender: "Zed", Text: "hello all" }));
+            Assert.All(peers, p => Assert.Contains(p.Latest.Chat, l => l is { Sender: "P1", Text: "hi Zed" }));
+            Assert.True(peers[2].Latest.Chat.Single(l => l.Sender == "Zed").IsLocal);
+            Assert.False(peers[0].Latest.Chat.Single(l => l.Sender == "Zed").IsLocal);
+            await Assert.ThrowsAsync<SessionException>(() => peers[0].App.SendChat.ExecuteAsync("   "));
+        }
+        finally
+        {
+            await DisposeAllAsync(peers);
+        }
+    }
+
+    /// <summary>Peer 0 hosts and the rest join; returns the port once everyone is connected to everyone.</summary>
+    private static async Task<int> FormLobbyAsync(TestPeer[] peers)
+    {
+        var port = FreePort();
+        await peers[0].App.HostLobby.ExecuteAsync(peers[0].Name, port);
+        foreach (var joiner in peers.Skip(1))
+        {
+            await joiner.App.JoinLobby.ExecuteAsync(joiner.Name, "127.0.0.1", port);
+        }
+
+        await WaitUntil(
+            () => peers.All(p => p.Latest.Members.Count == peers.Length && p.Latest.Members.All(m => m.IsReady)),
+            "mesh never became ready");
+        return port;
+    }
+
+    /// <summary>The initiator invites everyone, everyone accepts, and the game starts.</summary>
+    private static async Task StartGameAsync(TestPeer initiator, TestPeer[] peers)
+    {
+        await initiator.App.ProposeGame.ExecuteAsync();
+        await WaitUntil(() => peers.All(p => p.Latest.Match?.Phase == MatchPhaseView.Inviting), "invite did not reach everyone");
+        foreach (var peer in peers.Where(p => p != initiator))
+        {
+            await peer.App.AcceptInvite.ExecuteAsync();
+        }
+
+        await WaitUntil(
+            () => initiator.Latest.Match!.Invitees.All(i => i.Answer == InviteAnswer.Accepted) && initiator.Latest.Match.CanStart,
+            "answers never arrived");
+        await initiator.App.StartGame.ExecuteAsync();
+        await WaitUntil(() => peers.All(p => p.Latest.Match is { IsPlaying: true, Game: not null }), "not everyone started");
+    }
+
+    private static async Task DisposeAllAsync(IEnumerable<TestPeer> peers)
+    {
+        foreach (var peer in peers)
+        {
+            await peer.App.DisposeAsync();
+        }
+    }
+
+    private static string Describe(GameStateView game) => string.Join(
+        " / ",
+        game.Seats.Select(s => $"{s.Name}:{s.Standing}:{s.Rank}:" +
+            string.Join(",", s.Tokens.Select(t => $"{t.Location}{t.Progress}"))));
+
+    private static int FreePort()
+    {
+        var probe = new TcpListener(IPAddress.Loopback, 0);
+        probe.Start();
+        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
+        probe.Stop();
+        return port;
+    }
+
+    private static async Task WaitUntil(Func<bool> condition, string failure)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < deadline, failure);
+            await Task.Delay(20);
+        }
+    }
+
+    private sealed class TestPeer : ISessionPresenter
+    {
+        private volatile SessionSnapshot _latest = SessionSnapshot.Empty;
+
+        public TestPeer(string name, ILobbyDiscovery? discovery = null)
+        {
+            Name = name;
+            App = new LudoApplication(
+                new TcpPeerNetwork(),
+                discovery ?? new NullDiscovery(),
+                new Sha256CryptoProvider(),
+                this,
+                TimeProvider.System);
+        }
+
+        public string Name { get; }
+
+        public LudoApplication App { get; }
+
+        public SessionSnapshot Latest => _latest;
+
+        public System.Collections.Concurrent.ConcurrentQueue<string> Notices { get; } = new();
+
+        public void PresentSession(SessionSnapshot snapshot) => _latest = snapshot;
+
+        public void PresentNotice(string message) => Notices.Enqueue(message);
+
+        public void PresentChat(ChatLineView line)
+        {
+        }
+
+        public void PresentInvite(InviteView invite)
+        {
+        }
+
+        /// <summary>A bot: rolls on its turn and always moves its first movable token, until the game ends for it.</summary>
+        public async Task PlayAsync(CancellationToken cancellation)
+        {
+            while (_latest.Match is { Phase: MatchPhaseView.Playing, IsPlaying: true, Game: { } game })
+            {
+                cancellation.ThrowIfCancellationRequested();
+                try
+                {
+                    if (game.IsLocalTurn && game.Phase == GamePhaseView.WaitingForRoll)
+                    {
+                        await App.RollDice.ExecuteAsync();
+                        continue;
+                    }
+
+                    if (game.IsLocalTurn && game.Phase == GamePhaseView.WaitingForMove)
+                    {
+                        var token = game.Seats.Single(s => s.IsLocal).Tokens.First(t => t.CanMove);
+                        await App.MoveToken.ExecuteAsync(token.Index);
+                        continue;
+                    }
+                }
+                catch (SessionException)
+                {
+                    // Snapshot was stale; look again.
+                }
+
+                await Task.Delay(1, cancellation);
+            }
+        }
+    }
+
+    private sealed class NullDiscovery : ILobbyDiscovery
+    {
+        public event EventHandler<DiscoveredLobby>? LobbyDiscovered
+        {
+            add { }
+            remove { }
+        }
+
+        public void Advertise(LobbyAdvertisement advertisement)
+        {
+        }
+
+        public void StopAdvertising()
+        {
+        }
+
+        public void StartBrowsing()
+        {
+        }
+
+        public void StopBrowsing()
+        {
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class ScriptedDiscovery : ILobbyDiscovery
+    {
+        public event EventHandler<DiscoveredLobby>? LobbyDiscovered;
+
+        public void Announce(DiscoveredLobby lobby) => LobbyDiscovered?.Invoke(this, lobby);
+
+        public void Advertise(LobbyAdvertisement advertisement)
+        {
+        }
+
+        public void StopAdvertising()
+        {
+        }
+
+        public void StartBrowsing()
+        {
+        }
+
+        public void StopBrowsing()
+        {
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+}

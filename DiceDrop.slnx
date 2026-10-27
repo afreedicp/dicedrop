@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Ludo.Application/Ludo.Application.csproj" />
+    <Project Path="src/Ludo.Domain/Ludo.Domain.csproj" />
+    <Project Path="src/Ludo.Infrastructure/Ludo.Infrastructure.csproj" />
+    <Project Path="src/Ludo.Presentation.Wpf/Ludo.Presentation.Wpf.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ludo.Application.Tests/Ludo.Application.Tests.csproj" />
+    <Project Path="tests/Ludo.Domain.Tests/Ludo.Domain.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Outermost layer: WPF UI, capture protection and the composition root. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- Only for the notification-area icon and its menu; WPF has no tray support. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>DiceDrop</AssemblyName>
+    <Product>DiceDrop</Product>
+    <ApplicationIcon>dicedrop.ico</ApplicationIcon>
+    <RootNamespace>Ludo.Presentation.Wpf</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!-- Portable build: one self-contained .exe, nothing to install. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <!-- WinForms is referenced for the tray only: keep its type names out of every file so they never shadow WPF's. -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ludo.Application\Ludo.Application.csproj" />
+    <ProjectReference Include="..\Ludo.Infrastructure\Ludo.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,97 @@
+# Publishes the portable DiceDrop.exe as a GitHub release whenever a new version is created.
+#
+# Create a version either way:
+#   - push a tag:      git tag v1.2.0 && git push origin v1.2.0
+#   - or run manually: Actions > Release > Run workflow, enter v1.2.0
+#
+# The only accepted format is vMAJOR.MINOR.PATCH: a lowercase "v", then three numbers
+# without leading zeros (v1.2.0, v10.0.3). Anything else (1.2.0, V1.2.0, v1.2, v01.2.0,
+# v1.2.0-beta) is rejected. The version must also be strictly greater than the highest
+# version already released. Rejected versions fail before anything is built.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*" # every v-tag starts the run, so a malformed one fails loudly instead of being ignored
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, exactly vMAJOR.MINOR.PATCH (e.g. v1.2.0); must be greater than the latest release"
+        required: true
+
+# One release at a time, so two versions can't both pass the "greater than latest" check.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check version
+        id: version
+        env:
+          REQUESTED: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+        run: |
+          # vMAJOR.MINOR.PATCH, lowercase v, no leading zeros, nothing before or after.
+          $format = '^v(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})\z'
+          $tag = $env:REQUESTED
+          if ($tag -cnotmatch $format) {
+            Write-Error "'$tag' is not a valid version. The only accepted format is vMAJOR.MINOR.PATCH, e.g. v1.2.0."
+            exit 1
+          }
+          $version = [version]$tag.Substring(1)
+
+          $released = gh release list --repo $env:GITHUB_REPOSITORY --limit 1000 --json tagName --jq '.[].tagName'
+          if ($LASTEXITCODE -ne 0) { Write-Error "Could not list existing releases."; exit 1 }
+          $latest = $released |
+            Where-Object { $_ -cmatch $format } |
+            ForEach-Object { [version]$_.Substring(1) } |
+            Sort-Object -Descending |
+            Select-Object -First 1
+
+          if ($latest -and $version -le $latest) {
+            Write-Error "Version $tag is not greater than the latest release v$latest. Pick a higher version."
+            exit 1
+          }
+          Write-Host "Releasing $tag (latest release: $(if ($latest) { "v$latest" } else { 'none' }))"
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test DiceDrop.slnx -c Release
+
+      - name: Publish portable exe
+        run: >
+          dotnet publish src/Ludo.Presentation.Wpf/Ludo.Presentation.Wpf.csproj -c Release -o dist
+          -p:Version=${{ steps.version.outputs.version }}
+
+      - name: Create release
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          $hash = (Get-FileHash dist/DiceDrop.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  DiceDrop.exe" | Out-File dist/DiceDrop.exe.sha256 -Encoding ascii
+
+          # For a manual run the tag doesn't exist yet; --target creates it on the commit that was built.
+          gh release create $tag dist/DiceDrop.exe dist/DiceDrop.exe.sha256 `
+            --repo $env:GITHUB_REPOSITORY `
+            --target $env:GITHUB_SHA `
+            --title "DiceDrop $tag" `
+            --generate-notes
+          if ($LASTEXITCODE -ne 0) { exit 1 }

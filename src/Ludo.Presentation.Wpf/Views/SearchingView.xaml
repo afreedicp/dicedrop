@@ -1,0 +1,18 @@
+<UserControl x:Class="Ludo.Presentation.Wpf.Views.SearchingView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="560">
+        <TextBlock Text="DiceDrop" FontSize="34" FontWeight="Bold" HorizontalAlignment="Center" />
+        <TextBlock Style="{StaticResource Muted}" FontSize="15" Margin="0,4,0,24" HorizontalAlignment="Center"
+                   Text="Serverless Ludo for 2 to 8 players. Every peer checks every move, and nobody can rig the dice." 
+                   TextWrapping="Wrap" TextAlignment="Center" />
+        <Border Style="{StaticResource Card}">
+            <StackPanel>
+                <TextBlock Style="{StaticResource Heading}" Text="Finding players on your network…" HorizontalAlignment="Center" />
+                <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap" TextAlignment="Center">
+                    <Run Text="Playing as " /><Run Text="{Binding PlayerName, Mode=OneWay}" FontWeight="SemiBold" /><Run Text=". You will join the lobby on this network, or open one if there is none yet." />
+                </TextBlock>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

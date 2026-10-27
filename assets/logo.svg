@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>DiceDrop</title>
+  <!-- Drop trail -->
+  <g stroke="#FFC94A" stroke-width="14" stroke-linecap="round">
+    <line x1="92" y1="14" x2="92" y2="40" />
+    <line x1="128" y1="6" x2="128" y2="44" />
+    <line x1="164" y1="14" x2="164" y2="40" />
+  </g>
+  <!-- Die, tumbling as it lands; one pip per classic seat colour, white centre -->
+  <g transform="rotate(-10 128 152)">
+    <rect x="44" y="68" width="168" height="168" rx="36" fill="#2C2F3B" stroke="#FFC94A" stroke-width="10" />
+    <circle cx="88" cy="112" r="17" fill="#E53935" />
+    <circle cx="168" cy="112" r="17" fill="#1E88E5" />
+    <circle cx="128" cy="152" r="17" fill="#EDEDF2" />
+    <circle cx="88" cy="192" r="17" fill="#43A047" />
+    <circle cx="168" cy="192" r="17" fill="#FDD835" />
+  </g>
+</svg>

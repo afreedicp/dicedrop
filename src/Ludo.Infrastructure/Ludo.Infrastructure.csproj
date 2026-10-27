@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Adapters implementing Application ports: TCP mesh, UDP discovery, crypto, serialisation. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Ludo.Application\Ludo.Application.csproj" />
+  </ItemGroup>
+</Project>
