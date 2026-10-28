@@ -3,9 +3,12 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Ludo.Application.Session;
 using Ludo.Presentation.Wpf.Security;
+using Ludo.Presentation.Wpf.ViewModels;
 
 namespace Ludo.Presentation.Wpf.Views;
 
@@ -22,7 +25,7 @@ public partial class ChatToastWindow : ProtectedWindow
     private const int WsExNoActivate = 0x08000000;
     private static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(6);
 
-    private readonly ObservableCollection<ChatLineView> _lines = [];
+    private readonly ObservableCollection<ChatMessageItem> _lines = [];
     private readonly DispatcherTimer _hideTimer;
     private bool _protectionFailed;
 
@@ -43,7 +46,7 @@ public partial class ChatToastWindow : ProtectedWindow
             return;
         }
 
-        _lines.Add(line);
+        _lines.Add(new ChatMessageItem(line, StartsGroup: true, DateTime.Now));
         while (_lines.Count > MaxLines)
         {
             _lines.RemoveAt(0);
@@ -54,6 +57,7 @@ public partial class ChatToastWindow : ProtectedWindow
         if (!IsVisible)
         {
             Show();
+            SlideIn();
         }
     }
 
@@ -71,6 +75,22 @@ public partial class ChatToastWindow : ProtectedWindow
         // Keep it out of Alt+Tab and never let it take focus from whatever the user is doing.
         var handle = new WindowInteropHelper(this).Handle;
         SetWindowLong(handle, GwlExStyle, GetWindowLong(handle, GwlExStyle) | WsExToolWindow | WsExNoActivate);
+    }
+
+    /// <summary>The content glides in from the screen edge when the toast appears.</summary>
+    private void SlideIn()
+    {
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            return;
+        }
+
+        var duration = TimeSpan.FromMilliseconds(320);
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var shift = new TranslateTransform();
+        Body.RenderTransform = shift;
+        shift.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(40, 0, duration) { EasingFunction = ease });
+        Body.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duration) { EasingFunction = ease });
     }
 
     private void PlaceInCorner()

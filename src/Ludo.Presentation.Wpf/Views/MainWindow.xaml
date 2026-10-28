@@ -30,7 +30,26 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ContentControl Content="{Binding CurrentScreen}" Focusable="False" />
+        <!-- Each new screen fades in and settles into place. -->
+        <ContentControl Content="{Binding CurrentScreen, NotifyOnTargetUpdated=True}" Focusable="False">
+            <ContentControl.RenderTransform>
+                <TranslateTransform />
+            </ContentControl.RenderTransform>
+            <ContentControl.Triggers>
+                <EventTrigger RoutedEvent="Binding.TargetUpdated">
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.3" />
+                            <DoubleAnimation Storyboard.TargetProperty="RenderTransform.Y" From="14" To="0" Duration="0:0:0.35">
+                                <DoubleAnimation.EasingFunction>
+                                    <CubicEase EasingMode="EaseOut" />
+                                </DoubleAnimation.EasingFunction>
+                            </DoubleAnimation>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </EventTrigger>
+            </ContentControl.Triggers>
+        </ContentControl>
 
         <!-- Network log, inside this window so it is capture-protected like everything else. F12 toggles it. -->
         <Border Grid.Row="1" Height="260" Background="{StaticResource Surface}" BorderBrush="{StaticResource Border}"
@@ -97,8 +116,9 @@
         </StackPanel>
 
         <!-- Update banner: a newer release is out. Clicking it opens the release page in the browser. -->
-        <Border VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="6" Padding="4" CornerRadius="10"
+        <Border VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="8" Padding="4" CornerRadius="14"
                 Background="{StaticResource Surface}" BorderBrush="{StaticResource Accent}" BorderThickness="1"
+                Effect="{StaticResource FloatingShadow}" views:Motion.Enter="True" views:Motion.EnterOffset="20"
                 Visibility="{Binding Update.IsVisible, Converter={StaticResource BoolToVisibility}}">
             <StackPanel Orientation="Horizontal">
                 <Button Padding="12,5" FontSize="12" Command="{Binding Update.OpenCommand}">
@@ -116,7 +136,8 @@
 
         <!-- In-window notice instead of a MessageBox: a separate window would be one more thing to protect. -->
         <Border Grid.RowSpan="2" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,16,0,0" Padding="16,10"
-                CornerRadius="8" Background="#3B2F1A" BorderBrush="{StaticResource Accent}" BorderThickness="1"
+                CornerRadius="14" Background="#2E2819" BorderBrush="{StaticResource Accent}" BorderThickness="1"
+                Effect="{StaticResource FloatingShadow}" views:Motion.Enter="True" views:Motion.EnterOffset="-16"
                 MaxWidth="640">
             <Border.Style>
                 <Style TargetType="Border">
