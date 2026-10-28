@@ -23,7 +23,7 @@ internal sealed class LobbyProtocol(SessionContext context, MatchProtocol matche
         context.Peers[connection.Peer] = new PeerInfo(connection.Peer, connection.Host, connection.ListenPort);
         context.Network.Send(
             connection.Peer,
-            new HelloMessage(ProtocolInfo.Version, context.LocalName));
+            new HelloMessage(ProtocolInfo.Version, context.LocalName, context.LocalProfile));
     }
 
     public DispatchResult OnHello(PlayerId from, HelloMessage hello)
@@ -59,6 +59,7 @@ internal sealed class LobbyProtocol(SessionContext context, MatchProtocol matche
         }
 
         peer.Name = name;
+        peer.Profile = SessionContext.ValidateProfile(hello.Profile);
         matches.OnMemberGreeted(from);
 
         if (!context.IsHost)
@@ -173,7 +174,7 @@ internal sealed class LobbyProtocol(SessionContext context, MatchProtocol matche
         var line = SessionContext.NormalizeChat(text)
             ?? throw new Common.SessionException($"Messages must be 1 to {SessionLimits.MaxChatLength} characters.");
         context.Network.Broadcast(new ChatMessage(line));
-        context.AddChat(context.LocalName, line, isLocal: true);
+        context.AddChat(context.LocalId, line, isLocal: true);
     }
 
     public DispatchResult OnChat(PlayerId from, ChatMessage chat)
@@ -185,7 +186,95 @@ internal sealed class LobbyProtocol(SessionContext context, MatchProtocol matche
             return DispatchResult.Ignored;
         }
 
-        context.AddChat(context.NameOf(from), line, isLocal: false);
+        context.AddChat(from, line, isLocal: false);
+        return DispatchResult.Handled;
+    }
+
+    public void DirectChatLocal(string peerKey, string text)
+    {
+        RequireLobby();
+        var peer = RequirePeer(peerKey);
+        var line = SessionContext.NormalizeChat(text)
+            ?? throw new Common.SessionException($"Messages must be 1 to {SessionLimits.MaxChatLength} characters.");
+        context.Network.Send(peer, new DirectChatMessage(line));
+        context.AddDirect(peer, context.LocalId, line, ChatLineKind.Message);
+    }
+
+    public DispatchResult OnDirectChat(PlayerId from, DirectChatMessage chat)
+    {
+        if (context.Stage != SessionStage.Lobby
+            || !context.Peers.TryGetValue(from, out var peer) || !peer.IsGreeted
+            || SessionContext.NormalizeChat(chat.Text) is not { } line)
+        {
+            return DispatchResult.Ignored;
+        }
+
+        context.AddDirect(from, from, line, ChatLineKind.Message);
+        return DispatchResult.Handled;
+    }
+
+    public void NudgeLocal(string peerKey)
+    {
+        RequireLobby();
+        var target = RequirePeer(peerKey);
+        var peer = context.Peers[target];
+        var now = context.Time.GetUtcNow();
+        if (peer.LastNudgeOut is { } last && now - last < SessionLimits.NudgeCooldown)
+        {
+            var wait = Math.Ceiling((SessionLimits.NudgeCooldown - (now - last)).TotalSeconds);
+            throw new Common.SessionException($"You can nudge {peer.Name} again in {wait} s.");
+        }
+
+        peer.LastNudgeOut = now;
+        context.Network.Send(target, new NudgeMessage());
+        context.AddDirect(target, context.LocalId, $"You nudged {peer.Name}.", ChatLineKind.Nudge);
+    }
+
+    public DispatchResult OnNudge(PlayerId from)
+    {
+        if (context.Stage != SessionStage.Lobby || !context.Peers.TryGetValue(from, out var peer) || !peer.IsGreeted)
+        {
+            return DispatchResult.Ignored;
+        }
+
+        // A little slack under the sender's own cooldown, for clock and delivery jitter.
+        var now = context.Time.GetUtcNow();
+        if (peer.LastNudgeIn is { } last && now - last < SessionLimits.NudgeCooldown / 2)
+        {
+            return DispatchResult.Ignored;
+        }
+
+        peer.LastNudgeIn = now;
+        context.AddDirect(from, from, $"{peer.Name} nudged you.", ChatLineKind.Nudge);
+        context.Presenter.PresentNudge(new NudgeView(SessionContext.KeyOf(from), peer.Name!));
+        return DispatchResult.Handled;
+    }
+
+    /// <summary>Sets our avatar. Outside a lobby it is just kept, and goes out in the next Hello.</summary>
+    public void ProfileLocal(PlayerProfile profile)
+    {
+        var valid = SessionContext.ValidateProfile(profile) ?? throw new Common.SessionException("That avatar is not valid.");
+        if (profile.Photo is not null && valid.Photo is null)
+        {
+            throw new Common.SessionException($"Avatar photos must be PNG or JPEG and at most {SessionLimits.MaxPhotoBytes / 1024} KB.");
+        }
+
+        context.LocalProfile = valid;
+        if (context.Stage == SessionStage.Lobby)
+        {
+            context.Network.Broadcast(new ProfileMessage(context.LocalProfile));
+        }
+    }
+
+    public DispatchResult OnProfile(PlayerId from, ProfileMessage message)
+    {
+        if (context.Stage != SessionStage.Lobby || !context.Peers.TryGetValue(from, out var peer) || !peer.IsGreeted
+            || SessionContext.ValidateProfile(message.Profile) is not { } profile)
+        {
+            return DispatchResult.Ignored;
+        }
+
+        peer.Profile = profile;
         return DispatchResult.Handled;
     }
 
@@ -327,6 +416,12 @@ internal sealed class LobbyProtocol(SessionContext context, MatchProtocol matche
             BroadcastRoster();
         }
     }
+
+    private PlayerId RequirePeer(string key) =>
+        SessionContext.FindByKey(key) is { } id && id != context.LocalId
+            && context.Peers.TryGetValue(id, out var peer) && peer.IsGreeted
+            ? id
+            : throw new Common.SessionException("That person is no longer in the lobby.");
 
     private void RequireLobby()
     {

@@ -1,93 +1,128 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
-using System.Windows.Media;
 using Ludo.Application;
 using Ludo.Application.Session;
 
 namespace Ludo.Presentation.Wpf.ViewModels;
 
-public sealed record LobbyMemberItem(string Name, string Tags, bool IsReady, bool InGame)
-{
-    public string Initials => ChatMessageItem.InitialsOf(Name);
+/// <param name="Answer">"Host", "In", "Out" or "Invited".</param>
+public sealed record InviteeItem(PersonViewModel Person, string Answer, bool IsIn);
 
-    public Brush AvatarColor => ChatMessageItem.AvatarColorOf(Name);
+/// <summary>A game from the catalog, as listed in the games panel.</summary>
+public sealed record GameCardItem(GameInfo Info)
+{
+    public string Players => $"{Info.MinPlayers}–{Info.MaxPlayers} players";
 }
 
-/// <param name="Answer">"Started it", "In", "Out" or "…".</param>
-public sealed record InviteeItem(string Name, string Answer, bool IsIn);
+/// <summary>Someone who can be ticked in the invite picker.</summary>
+public sealed class InviteChoice(PersonViewModel person) : ObservableObject
+{
+    private bool _isChecked;
 
+    public PersonViewModel Person { get; } = person;
+
+    public bool IsChecked
+    {
+        get => _isChecked;
+        set => SetProperty(ref _isChecked, value);
+    }
+}
+
+/// <summary>
+/// The main screen: the people in the lobby, the group chat and private conversations with each of them,
+/// and the games panel where anyone can invite some or all of the lobby to play.
+/// </summary>
 public sealed class LobbyViewModel : ObservableObject
 {
-    private readonly AsyncCommand _saveNameCommand;
-    private readonly AsyncCommand _sendChatCommand;
-    private readonly AsyncCommand _proposeCommand;
+    private readonly LudoApplication _app;
+    private readonly Action<Exception> _onError;
+    private readonly Dictionary<string, PersonViewModel> _people = [];
+    private readonly Dictionary<string, ConversationViewModel> _direct = [];
+    private readonly AsyncCommand _sendInviteCommand;
     private readonly AsyncCommand _beginCommand;
-    private IReadOnlyList<LobbyMemberItem> _members = [];
+    private ConversationViewModel _selected;
+    private PersonViewModel _me = new(string.Empty);
+    private IReadOnlyList<PersonViewModel> _members = [];
     private IReadOnlyList<InviteeItem> _invitees = [];
     private string _status = string.Empty;
-    private string _localName = string.Empty;
-    private bool _isRenaming;
-    private string _nameDraft = string.Empty;
-    private string _chatDraft = string.Empty;
     private bool _canPropose;
     private bool _canBegin;
+    private GameInfo? _picking;
+    private bool _hasMatch;
     private string _gameTitle = string.Empty;
     private string _gameDetail = string.Empty;
     private string _beginLabel = "Begin game";
     private string _watchLabel = "Watch";
     private bool _isInvitedNow;
-    private bool _showPropose;
     private bool _showBegin;
     private bool _showCancel;
     private bool _showAccept;
     private bool _showDecline;
     private bool _showWatch;
     private bool _showStop;
+    private int _totalUnread;
 
     internal LobbyViewModel(LudoApplication app, Action<Exception> onError, Action viewGame)
     {
-        _saveNameCommand = new AsyncCommand(
+        _app = app;
+        _onError = onError;
+        LobbyChat = new ConversationViewModel(null, app, onError) { IsSelected = true };
+        Conversations.Add(LobbyChat);
+        _selected = LobbyChat;
+
+        _sendInviteCommand = new AsyncCommand(
             async _ =>
             {
-                await app.RenamePlayer.ExecuteAsync(NameDraft);
-                IsRenaming = false;
+                var game = _picking!;
+                var keys = InviteChoices.Where(c => c.IsChecked).Select(c => c.Person.Key).ToArray();
+                await app.ProposeGame.ExecuteAsync(game.Id, keys.Length == InviteChoices.Count ? null : keys);
+                Picking = null;
             },
             onError,
-            _ => !string.IsNullOrWhiteSpace(NameDraft));
-        _sendChatCommand = new AsyncCommand(
-            async _ =>
-            {
-                await app.SendChat.ExecuteAsync(ChatDraft);
-                ChatDraft = string.Empty;
-            },
-            onError,
-            _ => !string.IsNullOrWhiteSpace(ChatDraft));
-        _proposeCommand = new AsyncCommand(_ => app.ProposeGame.ExecuteAsync(), onError, _ => CanPropose);
+            _ => Picking is not null && InviteChoices.Any(c => c.IsChecked));
         _beginCommand = new AsyncCommand(_ => app.StartGame.ExecuteAsync(), onError, _ => CanBegin);
 
-        RenameCommand = new AsyncCommand(_ => { NameDraft = LocalName; IsRenaming = true; return Task.CompletedTask; }, onError);
-        CancelRenameCommand = new AsyncCommand(_ => { IsRenaming = false; return Task.CompletedTask; }, onError);
+        SelectCommand = new AsyncCommand(item => { Select(item as ConversationViewModel); return Task.CompletedTask; }, onError);
+        PickPlayersCommand = new AsyncCommand(game => { StartPicking((game as GameCardItem)?.Info); return Task.CompletedTask; }, onError);
+        CancelPickCommand = new AsyncCommand(_ => { Picking = null; return Task.CompletedTask; }, onError);
+        InvitePersonCommand = new AsyncCommand(
+            key => app.ProposeGame.ExecuteAsync(GameCatalog.Ludo.Id, [(string)key!]),
+            onError,
+            _ => CanPropose);
         AcceptCommand = new AsyncCommand(_ => app.AcceptInvite.ExecuteAsync(), onError);
         DeclineCommand = new AsyncCommand(_ => app.DeclineInvite.ExecuteAsync(), onError);
         StopCommand = new AsyncCommand(_ => app.StopGame.ExecuteAsync(), onError);
         WatchCommand = new AsyncCommand(_ => { viewGame(); return Task.CompletedTask; }, onError);
-    }
-
-    public IReadOnlyList<LobbyMemberItem> Members
-    {
-        get => _members;
-        private set
+        foreach (var game in GameCatalog.All)
         {
-            if (SetProperty(ref _members, value))
-            {
-                OnPropertyChanged(nameof(MemberCount));
-            }
+            Games.Add(new GameCardItem(game));
         }
     }
 
-    public int MemberCount => Members.Count;
+    /// <summary>The lobby's group chat, always first in the list.</summary>
+    public ConversationViewModel LobbyChat { get; }
 
-    public ObservableCollection<ChatMessageItem> Chat { get; } = [];
+    /// <summary>The group chat, then a private conversation per person.</summary>
+    public ObservableCollection<ConversationViewModel> Conversations { get; } = [];
+
+    public ConversationViewModel SelectedConversation
+    {
+        get => _selected;
+        private set => SetProperty(ref _selected, value);
+    }
+
+    public PersonViewModel Me
+    {
+        get => _me;
+        private set => SetProperty(ref _me, value);
+    }
+
+    /// <summary>Everyone else in the lobby, in join order.</summary>
+    public IReadOnlyList<PersonViewModel> Members
+    {
+        get => _members;
+        private set => SetProperty(ref _members, value);
+    }
 
     public string Status
     {
@@ -95,45 +130,32 @@ public sealed class LobbyViewModel : ObservableObject
         private set => SetProperty(ref _status, value);
     }
 
-    public string LocalName
+    /// <summary>Unread lines across all conversations, for the tray.</summary>
+    public int TotalUnread
     {
-        get => _localName;
-        private set => SetProperty(ref _localName, value);
+        get => _totalUnread;
+        private set => SetProperty(ref _totalUnread, value);
     }
 
-    public bool IsRenaming
-    {
-        get => _isRenaming;
-        private set => SetProperty(ref _isRenaming, value);
-    }
+    public ObservableCollection<GameCardItem> Games { get; } = [];
 
-    public string NameDraft
+    /// <summary>The game whose invite list is being picked; null when the picker is closed.</summary>
+    public GameInfo? Picking
     {
-        get => _nameDraft;
-        set
+        get => _picking;
+        private set
         {
-            if (SetProperty(ref _nameDraft, value))
+            if (SetProperty(ref _picking, value))
             {
-                _saveNameCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(IsPicking));
+                _sendInviteCommand.RaiseCanExecuteChanged();
             }
         }
     }
 
-    public string ChatDraft
-    {
-        get => _chatDraft;
-        set
-        {
-            if (SetProperty(ref _chatDraft, value))
-            {
-                _sendChatCommand.RaiseCanExecuteChanged();
-            }
-        }
-    }
+    public bool IsPicking => Picking is not null;
 
-    public int MaxNameLength => SessionLimits.MaxNameLength;
-
-    public int MaxChatLength => SessionLimits.MaxChatLength;
+    public ObservableCollection<InviteChoice> InviteChoices { get; } = [];
 
     public bool CanPropose
     {
@@ -142,9 +164,16 @@ public sealed class LobbyViewModel : ObservableObject
         {
             if (SetProperty(ref _canPropose, value))
             {
-                _proposeCommand.RaiseCanExecuteChanged();
+                ((AsyncCommand)InvitePersonCommand).RaiseCanExecuteChanged();
             }
         }
+    }
+
+    /// <summary>An invite is open or a game exists, so the match card shows instead of the catalog.</summary>
+    public bool HasMatch
+    {
+        get => _hasMatch;
+        private set => SetProperty(ref _hasMatch, value);
     }
 
     public bool CanBegin
@@ -196,12 +225,6 @@ public sealed class LobbyViewModel : ObservableObject
         private set => SetProperty(ref _watchLabel, value);
     }
 
-    public bool ShowPropose
-    {
-        get => _showPropose;
-        private set => SetProperty(ref _showPropose, value);
-    }
-
     public bool ShowBegin
     {
         get => _showBegin;
@@ -238,15 +261,17 @@ public sealed class LobbyViewModel : ObservableObject
         private set => SetProperty(ref _showStop, value);
     }
 
-    public ICommand RenameCommand { get; }
+    public ICommand SelectCommand { get; }
 
-    public ICommand SaveNameCommand => _saveNameCommand;
+    /// <summary>Opens the invite picker for a game from the catalog.</summary>
+    public ICommand PickPlayersCommand { get; }
 
-    public ICommand CancelRenameCommand { get; }
+    public ICommand CancelPickCommand { get; }
 
-    public ICommand SendChatCommand => _sendChatCommand;
+    public ICommand SendInviteCommand => _sendInviteCommand;
 
-    public ICommand ProposeCommand => _proposeCommand;
+    /// <summary>Invites one person, by key, to a game of Ludo.</summary>
+    public ICommand InvitePersonCommand { get; }
 
     public ICommand BeginCommand => _beginCommand;
 
@@ -259,25 +284,173 @@ public sealed class LobbyViewModel : ObservableObject
 
     public ICommand WatchCommand { get; }
 
+    /// <summary>Opens a conversation by person key; the empty key is the lobby chat.</summary>
+    internal void OpenConversation(string key) =>
+        Select(key.Length == 0 ? LobbyChat : _direct.GetValueOrDefault(key));
+
+    internal PersonViewModel? FindPerson(string key) => _people.GetValueOrDefault(key);
+
+    /// <summary>Who can be written to from the tray: the lobby, then everyone present.</summary>
+    internal IEnumerable<ConversationViewModel> WritableConversations() => Conversations.Where(c => c.CanWrite);
+
     internal void Update(SessionSnapshot snapshot)
     {
-        Members = snapshot.Members
-            .Select(m => new LobbyMemberItem(
-                m.Name,
-                string.Join("  ·  ", new[] { m.IsHost ? "host" : null, m.IsLocal ? "you" : null }.OfType<string>()),
-                m.IsReady,
-                m.InGame))
-            .ToArray();
-        LocalName = snapshot.LocalName;
+        foreach (var member in snapshot.Members)
+        {
+            PersonOf(member.Key, member.Name).Update(member);
+        }
+
+        var present = snapshot.Members.Select(m => m.Key).ToHashSet();
+        foreach (var person in _people.Values.Where(p => !present.Contains(p.Key)))
+        {
+            person.IsPresent = false;
+        }
+
+        Me = snapshot.Members.FirstOrDefault(m => m.IsLocal) is { } local ? _people[local.Key] : Me;
+        Members = snapshot.Members.Where(m => !m.IsLocal).Select(m => _people[m.Key]).ToArray();
         CanPropose = snapshot.CanProposeGame;
-        SyncChat(snapshot.Chat);
+
+        LobbyChat.Sync(snapshot.Chat, SenderOf);
+        foreach (var member in Members)
+        {
+            ConversationWith(member);
+        }
+
+        foreach (var chat in snapshot.DirectChats)
+        {
+            ConversationWith(PersonOf(chat.PeerKey, chat.PeerName)).Sync(chat.Lines, SenderOf);
+        }
+
+        OrderConversations();
+        TotalUnread = Conversations.Sum(c => c.Unread);
 
         var connecting = snapshot.Members.Count(m => !m.IsReady);
-        Status = snapshot.Members.Count < 2 ? "Waiting for players on your network…"
-            : connecting > 0 ? $"Connecting players to each other ({connecting} pending)…"
-            : $"{snapshot.Members.Count} players in the lobby. Anyone can start a game.";
+        Status = snapshot.Members.Count < 2 ? "Waiting for others on your network…"
+            : connecting > 0 ? $"Connecting ({connecting} pending)…"
+            : $"{snapshot.Members.Count} online";
+
+        if (Picking is not null)
+        {
+            SyncInviteChoices();
+        }
 
         UpdateGameCard(snapshot);
+    }
+
+    internal void Clear()
+    {
+        foreach (var person in _people.Values)
+        {
+            person.IsPresent = false;
+        }
+    }
+
+    private PersonViewModel SenderOf(ChatLineView line) => PersonOf(line.SenderKey, line.Sender);
+
+    private PersonViewModel PersonOf(string key, string name)
+    {
+        if (!_people.TryGetValue(key, out var person))
+        {
+            _people[key] = person = new PersonViewModel(key);
+            person.UpdateName(name);
+        }
+
+        return person;
+    }
+
+    private ConversationViewModel ConversationWith(PersonViewModel person)
+    {
+        if (!_direct.TryGetValue(person.Key, out var conversation))
+        {
+            _direct[person.Key] = conversation = new ConversationViewModel(person, _app, _onError);
+            conversation.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(ConversationViewModel.Unread))
+                {
+                    TotalUnread = Conversations.Sum(c => c.Unread);
+                }
+            };
+        }
+
+        return conversation;
+    }
+
+    /// <summary>The lobby, then people present in join order, then people who left but whose messages we keep.</summary>
+    private void OrderConversations()
+    {
+        var order = Members.Select(m => _direct[m.Key])
+            .Concat(_direct.Values.Where(c => !c.Person!.IsPresent && c.Messages.Count > 0))
+            .Prepend(LobbyChat)
+            .ToList();
+        if (!order.Contains(SelectedConversation))
+        {
+            Select(LobbyChat);
+        }
+
+        for (var i = 0; i < order.Count; i++)
+        {
+            var at = Conversations.IndexOf(order[i]);
+            if (at < 0)
+            {
+                Conversations.Insert(i, order[i]);
+            }
+            else if (at != i)
+            {
+                Conversations.Move(at, i);
+            }
+        }
+
+        while (Conversations.Count > order.Count)
+        {
+            Conversations.RemoveAt(Conversations.Count - 1);
+        }
+    }
+
+    private void Select(ConversationViewModel? conversation)
+    {
+        if (conversation is null || conversation == SelectedConversation)
+        {
+            return;
+        }
+
+        SelectedConversation.IsSelected = false;
+        conversation.IsSelected = true;
+        SelectedConversation = conversation;
+    }
+
+    private void StartPicking(GameInfo? game)
+    {
+        if (game is null)
+        {
+            return;
+        }
+
+        InviteChoices.Clear();
+        Picking = game;
+        SyncInviteChoices();
+        foreach (var choice in InviteChoices)
+        {
+            choice.IsChecked = true;
+        }
+    }
+
+    /// <summary>Keeps the picker's list in line with who is in the lobby, keeping the ticks already made.</summary>
+    private void SyncInviteChoices()
+    {
+        var ready = Members.Where(m => m.IsReady).ToArray();
+        foreach (var gone in InviteChoices.Where(c => !ready.Contains(c.Person)).ToArray())
+        {
+            InviteChoices.Remove(gone);
+        }
+
+        foreach (var person in ready.Where(p => InviteChoices.All(c => c.Person != p)))
+        {
+            var choice = new InviteChoice(person);
+            choice.PropertyChanged += (_, _) => _sendInviteCommand.RaiseCanExecuteChanged();
+            InviteChoices.Add(choice);
+        }
+
+        _sendInviteCommand.RaiseCanExecuteChanged();
     }
 
     private void UpdateGameCard(SessionSnapshot snapshot)
@@ -287,78 +460,58 @@ public sealed class LobbyViewModel : ObservableObject
         var running = match is { Phase: MatchPhaseView.Playing };
         var mine = match?.IsInitiator == true;
         var answer = match?.LocalAnswer ?? InviteAnswer.Pending;
+        var invited = match?.IsInvited == true;
 
-        ShowPropose = !inviting && !running;
+        HasMatch = inviting || running || match?.Game is not null;
+        if (inviting || running)
+        {
+            Picking = null;
+        }
+
         ShowBegin = inviting && mine;
         ShowCancel = inviting && mine;
-        ShowAccept = inviting && !mine && answer != InviteAnswer.Accepted;
-        ShowDecline = inviting && !mine && answer == InviteAnswer.Accepted;
+        ShowAccept = inviting && !mine && invited && answer != InviteAnswer.Accepted;
+        ShowDecline = inviting && !mine && invited && answer == InviteAnswer.Accepted;
         ShowStop = running && mine;
         ShowWatch = match?.Game is not null;
         WatchLabel = running ? (match!.IsPlaying ? "Return to game" : "Watch") : "View last game";
-        IsInvitedNow = inviting && !mine && answer == InviteAnswer.Pending;
+        IsInvitedNow = inviting && !mine && invited && answer == InviteAnswer.Pending;
         CanBegin = match?.CanStart == true;
 
         Invitees = inviting
             ? match!.Invitees
                 .Select(i => new InviteeItem(
-                    i.IsLocal ? $"{i.Name} (you)" : i.Name,
-                    i.IsInitiator ? "Started it" : i.Answer switch { InviteAnswer.Accepted => "In", InviteAnswer.Declined => "Out", _ => "…" },
-                    i.Answer == InviteAnswer.Accepted))
+                    PersonOf(i.Key, i.Name),
+                    i.IsInitiator ? "Host" : i.Answer switch { InviteAnswer.Accepted => "In", InviteAnswer.Declined => "Out", _ => "Invited" },
+                    i.IsInitiator || i.Answer == InviteAnswer.Accepted))
                 .ToArray()
             : [];
         var players = match?.Invitees.Count(i => i.Answer == InviteAnswer.Accepted) ?? 0;
         BeginLabel = $"Begin game ({players} players)";
 
+        var game = match?.GameType.Name ?? GameCatalog.Ludo.Name;
         (GameTitle, GameDetail) = match switch
         {
             { Phase: MatchPhaseView.Inviting, IsInitiator: true } => (
-                "Waiting for players",
+                $"Waiting for players",
                 players > 1 ? "Begin whenever everyone who wants to play has said yes." : "Nobody has said yes yet."),
+            { Phase: MatchPhaseView.Inviting, IsInvited: false } => (
+                $"{match.InitiatorName} is setting up {game}",
+                "You weren't invited this time, but you can watch once it begins."),
             { Phase: MatchPhaseView.Inviting } when answer == InviteAnswer.Accepted => (
                 "You're in!",
                 $"Waiting for {match.InitiatorName} to begin the game…"),
             { Phase: MatchPhaseView.Inviting } when answer == InviteAnswer.Declined => (
-                $"{match.InitiatorName} is setting up a game",
+                $"{match.InitiatorName} is setting up {game}",
                 "You said not now. You can still join until it begins."),
             { Phase: MatchPhaseView.Inviting } => (
-                $"{match.InitiatorName} wants to play Ludo",
+                $"{match.InitiatorName} invited you to {game}",
                 "Join in, or skip this one and watch."),
             { Phase: MatchPhaseView.Playing } => (
-                match.IsInitiator ? "Your game is on" : $"{match.InitiatorName}'s game is on",
+                match.IsInitiator ? $"Your {game} game is on" : $"{match.InitiatorName}'s {game} game is on",
                 $"{string.Join(", ", match.Game?.Seats.Where(s => s.Standing != SeatStanding.Left).Select(s => s.Name) ?? [])} playing."),
-            _ when !snapshot.CanProposeGame => (
-                "Play Ludo",
-                "Waiting for someone else to join the lobby…"),
-            _ => (
-                "Play Ludo",
-                "Invite everyone in the lobby. Whoever accepts plays; the rest can watch."),
+            { } => ($"Last game: {game}", match.EndReason ?? "The game is over."),
+            _ => (string.Empty, string.Empty),
         };
-    }
-
-    /// <summary>
-    /// Keeps the chat in place so it holds its scroll position and only new lines animate in: drops lines trimmed
-    /// from the front of the history, appends new ones, and rebuilds only when the history was replaced.
-    /// </summary>
-    private void SyncChat(IReadOnlyList<ChatLineView> lines)
-    {
-        var trimmed = Enumerable.Range(0, Chat.Count + 1)
-            .First(skip => skip == Chat.Count
-                || (Chat.Count - skip <= lines.Count && Chat.Skip(skip).Select((item, i) => item.Line == lines[i]).All(same => same)));
-        for (var i = 0; i < trimmed; i++)
-        {
-            Chat.RemoveAt(0);
-        }
-
-        if (Chat.Count > 0 && !Chat[0].StartsGroup)
-        {
-            Chat[0] = Chat[0] with { StartsGroup = true };
-        }
-
-        foreach (var line in lines.Skip(Chat.Count))
-        {
-            var startsGroup = Chat.Count == 0 || Chat[^1].Sender != line.Sender || Chat[^1].IsLocal != line.IsLocal;
-            Chat.Add(new ChatMessageItem(line, startsGroup, DateTime.Now));
-        }
     }
 }

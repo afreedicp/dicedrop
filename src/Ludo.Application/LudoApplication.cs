@@ -22,7 +22,7 @@ public sealed class LudoApplication : IAsyncDisposable
         IDiagnosticLog? diagnostics = null)
     {
         _executor = new SessionExecutor(ex => presenter.PresentNotice($"Unexpected error: {ex.Message}"));
-        var context = new SessionContext(network, discovery, crypto, presenter);
+        var context = new SessionContext(network, discovery, crypto, presenter, time);
         var gameplay = new GameplayProtocol(context);
         var matches = new MatchProtocol(context, gameplay);
         var lobby = new LobbyProtocol(context, matches);
@@ -30,7 +30,7 @@ public sealed class LudoApplication : IAsyncDisposable
 
         HostLobby = new HostLobbyUseCase(context, _executor, lobby);
         JoinLobby = new JoinLobbyUseCase(context, _executor);
-        ProposeGame = new MatchCommandUseCase(context, _executor, router, matches.ProposeLocal);
+        ProposeGame = new ProposeGameUseCase(context, _executor, router, matches);
         AcceptInvite = new MatchCommandUseCase(context, _executor, router, () => matches.AnswerLocal(accept: true));
         DeclineInvite = new MatchCommandUseCase(context, _executor, router, () => matches.AnswerLocal(accept: false));
         StartGame = new MatchCommandUseCase(context, _executor, router, matches.StartLocal);
@@ -42,14 +42,17 @@ public sealed class LudoApplication : IAsyncDisposable
         AutoLobby = new AutoLobbyUseCase(discovery, context, _executor, HostLobby, JoinLobby, time, diagnostics ?? NullDiagnosticLog.Instance);
         RenamePlayer = new RenamePlayerUseCase(context, _executor, lobby, AutoLobby);
         SendChat = new SendChatUseCase(context, _executor, lobby);
+        SendDirectChat = new SendDirectChatUseCase(context, _executor, lobby);
+        Nudge = new NudgeUseCase(context, _executor, lobby);
+        UpdateProfile = new UpdateProfileUseCase(context, _executor, lobby);
     }
 
     public HostLobbyUseCase HostLobby { get; }
 
     public JoinLobbyUseCase JoinLobby { get; }
 
-    /// <summary>Any lobby member: invite everyone to a new game, which the caller then runs.</summary>
-    public MatchCommandUseCase ProposeGame { get; }
+    /// <summary>Any lobby member: invite some or all of the lobby to a game, which the caller then runs.</summary>
+    public ProposeGameUseCase ProposeGame { get; }
 
     public MatchCommandUseCase AcceptInvite { get; }
 
@@ -75,6 +78,12 @@ public sealed class LudoApplication : IAsyncDisposable
     public RenamePlayerUseCase RenamePlayer { get; }
 
     public SendChatUseCase SendChat { get; }
+
+    public SendDirectChatUseCase SendDirectChat { get; }
+
+    public NudgeUseCase Nudge { get; }
+
+    public UpdateProfileUseCase UpdateProfile { get; }
 
     public async ValueTask DisposeAsync()
     {

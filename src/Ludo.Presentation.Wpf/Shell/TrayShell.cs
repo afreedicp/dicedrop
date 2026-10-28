@@ -8,7 +8,7 @@ namespace Ludo.Presentation.Wpf.Shell;
 
 /// <summary>
 /// Keeps the game running in the notification area. Closing the window only hides it; the tray menu opens
-/// it, toggles start with Windows, or exits. A game that starts while we are hidden brings the window
+/// it, sends a quick message, toggles start with Windows, or exits. A game that starts while we are hidden brings the window
 /// back, since the other players would otherwise wait on our turns.
 /// </summary>
 internal sealed class TrayShell : IDisposable
@@ -22,16 +22,18 @@ internal sealed class TrayShell : IDisposable
     private bool _exiting;
     private bool _hintShown;
 
-    public TrayShell(Window mainWindow, WpfSessionPresenter presenter, Action<int> exit)
+    /// <param name="sendMessage">Opens the quick compose window.</param>
+    public TrayShell(Window mainWindow, WpfSessionPresenter presenter, Action<int> exit, Action sendMessage)
     {
         _mainWindow = mainWindow;
         _exit = exit;
 
         var open = new Forms.ToolStripMenuItem("Open DiceDrop", null, (_, _) => _mainWindow.BringToFront());
         open.Font = new Font(open.Font, System.Drawing.FontStyle.Bold);
+        var compose = new Forms.ToolStripMenuItem("Send message…", null, (_, _) => sendMessage());
         _startWithWindows = new Forms.ToolStripMenuItem("Start with Windows", null, (_, _) => ToggleStartWithWindows());
         _menu = new Forms.ContextMenuStrip();
-        _menu.Items.AddRange([open, _startWithWindows, new Forms.ToolStripSeparator(), new Forms.ToolStripMenuItem("Exit", null, (_, _) => Exit())]);
+        _menu.Items.AddRange([open, compose, new Forms.ToolStripSeparator(), _startWithWindows, new Forms.ToolStripSeparator(), new Forms.ToolStripMenuItem("Exit", null, (_, _) => Exit())]);
         _menu.Opening += (_, _) => _startWithWindows.Checked = StartupRegistration.IsEnabled;
 
         _icon = new Forms.NotifyIcon { Icon = LoadIcon(), Text = "DiceDrop", ContextMenuStrip = _menu, Visible = true };

@@ -123,6 +123,12 @@ internal sealed class PeerMessageRouter
                 return _lobby.OnRename(from, rename);
             case ChatMessage chat:
                 return _lobby.OnChat(from, chat);
+            case DirectChatMessage direct:
+                return _lobby.OnDirectChat(from, direct);
+            case NudgeMessage:
+                return _lobby.OnNudge(from);
+            case ProfileMessage profile:
+                return _lobby.OnProfile(from, profile);
             case JoinRejectedMessage rejected:
                 return await _lobby.OnJoinRejectedAsync(from, rejected).ConfigureAwait(false);
             case LobbyClosedMessage:

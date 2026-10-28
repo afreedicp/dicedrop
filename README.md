@@ -20,11 +20,16 @@ For development: `dotnet build DiceDrop.slnx`, `dotnet test DiceDrop.slnx`.
 
 ## Playing
 
-1. Everyone opens `DiceDrop.exe`. There is no menu: each copy finds the lobby on the network and joins it, or opens one if there is none yet. Players appear under their Windows account name.
+1. Everyone opens `DiceDrop.exe`. There is no menu: each copy finds the lobby on the network and joins it, or opens one if there is none yet. Players appear under their Windows account name until they pick another in **Settings** (the gear next to your name).
 2. Whoever opened the lobby is its host. If two players open lobbies at the same moment, the smaller one closes and its players move to the other within a second or two, so everyone ends up together. If the host leaves, the longest-standing member takes over and nothing else changes.
-3. **Anyone** in the lobby can click **Start a game**. Everyone else gets an invite (in the lobby, or as a corner notice if DiceDrop is in the background) and chooses **Join game** or **Not now**. Whoever started it sees who is in and clicks **Begin game** when ready.
-4. Roll by clicking the dice or pressing **Space**, then click one of your bouncing pawns. Pawns hop square by square; a captured pawn slides back to its yard.
-5. Members who are not playing can **Watch** the game live from the lobby. Players can **Leave game** at any time and keep watching. Whoever started the game can **Stop game** for everyone at any time. One game runs per lobby at a time, and the lobby (with its chat) stays open throughout, so the next game can start as soon as this one ends.
+3. The window is a messenger: people and chats on the left, the open chat in the middle, games on the right. **Lobby** is the group chat; click a person for a private chat. In a private chat, **Nudge** shakes their window, plays a sound and pops up a notice (once every 10 seconds; each player can turn the sound and shake off in Settings). The tray icon's **Send message…** writes to the lobby or a person without opening the window.
+4. **Anyone** can pick a game on the right and click **Invite players**, then choose who to invite (or use **Invite to Ludo** in a private chat). Invitees get an invite (in the lobby, or as a corner notice if DiceDrop is in the background) and choose **Join game** or **Not now**. Whoever started it sees who is in and clicks **Begin game** when ready.
+5. Roll by clicking the dice or pressing **Space**, then click one of your bouncing pawns. Pawns hop square by square; a captured pawn slides back to its yard.
+6. Members who are not playing can **Watch** the game live from the lobby. Players can **Leave game** at any time and keep watching. Whoever started the game can **Stop game** for everyone at any time. One game runs per lobby at a time, and the lobby (with its chat) stays open throughout, so the next game can start as soon as this one ends.
+
+**Settings** (name, profile photo or initials colour, chat pop-ups, nudge sound and shake) are saved in `%APPDATA%\DiceDrop\settings.json`; **Start with Windows** uses the usual per-user startup entry. Profile photos are shrunk to a small JPEG and shared only with the lobby. Chats are never saved.
+
+**Compatibility:** this version speaks protocol 3 (profiles, private chat, nudges, game invites). Older copies cannot join its lobbies, so everyone needs to update.
 
 The board is the classic cross-shaped Ludo board, turned so your own yard is at the bottom left. Two or three players use the full four-arm board (two players sit in opposite corners); five to eight players get a six-, seven- or eight-armed star built from the same arms.
 

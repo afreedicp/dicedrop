@@ -15,6 +15,14 @@ internal sealed class PeerInfo(PlayerId id, string host, int listenPort)
 
     public string? Name { get; set; }
 
+    public PlayerProfile? Profile { get; set; }
+
+    /// <summary>When this peer last nudged us; later nudges inside the cooldown are dropped.</summary>
+    public DateTimeOffset? LastNudgeIn { get; set; }
+
+    /// <summary>When we last nudged this peer.</summary>
+    public DateTimeOffset? LastNudgeOut { get; set; }
+
     /// <summary>True once the peer's Hello arrived, i.e. we know its name.</summary>
     public bool IsGreeted => Name is not null;
 }
@@ -80,11 +88,16 @@ internal sealed record MatchReply(bool Accepted, byte[]? Anchor);
 /// One game inside the lobby: proposed by any member (its initiator), joined by those who accept, and
 /// watched by everyone else. Lobby members outlive it and can start the next one.
 /// </summary>
-internal sealed class MatchState(Guid id, PlayerId initiator)
+internal sealed class MatchState(Guid id, PlayerId initiator, string gameId, IReadOnlySet<PlayerId>? invitees)
 {
     public Guid Id { get; } = id;
 
     public PlayerId Initiator { get; } = initiator;
+
+    public string GameId { get; } = gameId;
+
+    /// <summary>Who may join besides the initiator; null when everyone in the lobby was invited.</summary>
+    public IReadOnlySet<PlayerId>? Invitees { get; } = invitees;
 
     public MatchPhase Phase { get; set; } = MatchPhase.Inviting;
 
@@ -117,6 +130,8 @@ internal sealed class MatchState(Guid id, PlayerId initiator)
 
     /// <summary>Spectator side: we asked the initiator for a fresh replay and are waiting for it.</summary>
     public bool AwaitingReplay { get; set; }
+
+    public bool IsInvited(PlayerId id) => id == Initiator || Invitees is null || Invitees.Contains(id);
 
     public bool IsSeated(PlayerId id) => Seats.Any(s => s.Id == id);
 

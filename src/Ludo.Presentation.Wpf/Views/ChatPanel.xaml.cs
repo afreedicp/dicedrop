@@ -9,7 +9,24 @@ public partial class ChatPanel : UserControl
     /// <summary>The character count appears once a message gets this close to the limit.</summary>
     private const int CounterThreshold = 100;
 
-    public ChatPanel() => InitializeComponent();
+    public ChatPanel()
+    {
+        InitializeComponent();
+
+        // Opening another conversation starts at its newest line, ready to type.
+        DataContextChanged += (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            Scroller.ScrollToEnd();
+            NewMessages.Visibility = Visibility.Collapsed;
+            if (FocusOnOpen && IsVisible && Composer.IsEnabled)
+            {
+                Composer.Focus();
+            }
+        });
+    }
+
+    /// <summary>Puts the cursor in the message box whenever a conversation opens. Off where keys mean something else, like the board.</summary>
+    public bool FocusOnOpen { get; set; }
 
     /// <summary>
     /// Follows new lines while the newest one is in view. Scrolled up to read older ones, it stays put
@@ -51,13 +68,19 @@ public partial class ChatPanel : UserControl
     }
 }
 
-/// <summary>Our own chat lines and everyone else's are drawn differently.</summary>
+/// <summary>Our own chat lines, everyone else's, and nudges are drawn differently.</summary>
 public sealed class ChatTemplateSelector : DataTemplateSelector
 {
     public DataTemplate? LocalTemplate { get; set; }
 
     public DataTemplate? OtherTemplate { get; set; }
 
-    public override DataTemplate? SelectTemplate(object item, DependencyObject container) =>
-        item is ChatMessageItem { IsLocal: true } ? LocalTemplate : OtherTemplate;
+    public DataTemplate? NudgeTemplate { get; set; }
+
+    public override DataTemplate? SelectTemplate(object item, DependencyObject container) => item switch
+    {
+        ChatMessageItem { IsNudge: true } => NudgeTemplate,
+        ChatMessageItem { IsLocal: true } => LocalTemplate,
+        _ => OtherTemplate,
+    };
 }

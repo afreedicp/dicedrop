@@ -99,7 +99,7 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </Border>
-                    <views:ChatPanel DataContext="{Binding Lobby}" />
+                    <views:ChatPanel DataContext="{Binding Lobby.LobbyChat}" />
                 </DockPanel>
             </Border>
         </DockPanel>

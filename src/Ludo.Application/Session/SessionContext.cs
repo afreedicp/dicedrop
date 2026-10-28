@@ -15,14 +15,17 @@ internal sealed class SessionContext(
     IPeerNetwork network,
     ILobbyDiscovery discovery,
     ICryptoProvider crypto,
-    ISessionPresenter presenter)
+    ISessionPresenter presenter,
+    TimeProvider time)
 {
     public const int MaxPlayers = 8;
     private const int MaxLogEntries = 200;
     private const int MaxChatEntries = 200;
+    private const int MaxDirectEntries = 200;
 
     private readonly List<string> _log = [];
     private readonly List<ChatLineView> _chat = [];
+    private readonly Dictionary<PlayerId, List<ChatLineView>> _direct = [];
 
     public IPeerNetwork Network { get; } = network;
 
@@ -32,11 +35,16 @@ internal sealed class SessionContext(
 
     public ISessionPresenter Presenter { get; } = presenter;
 
+    public TimeProvider Time { get; } = time;
+
     public SessionStage Stage { get; set; } = SessionStage.Idle;
 
     public PlayerId LocalId { get; private set; }
 
     public string LocalName { get; private set; } = string.Empty;
+
+    /// <summary>Our avatar. Unlike the rest of the session it is kept when we move to another lobby.</summary>
+    public PlayerProfile LocalProfile { get; set; } = new(0, null);
 
     public PlayerId? HostId { get; set; }
 
@@ -60,6 +68,9 @@ internal sealed class SessionContext(
 
     /// <summary>Group chat of the current lobby. Held in memory only and dropped with the session.</summary>
     public IReadOnlyList<ChatLineView> Chat => _chat;
+
+    /// <summary>Private conversations, by the other person. Held in memory only, like the group chat.</summary>
+    public IReadOnlyDictionary<PlayerId, List<ChatLineView>> DirectChats => _direct;
 
     public static string ValidateName(string? name)
     {
@@ -107,6 +118,7 @@ internal sealed class SessionContext(
         Deferred.Clear();
         _log.Clear();
         _chat.Clear();
+        _direct.Clear();
     }
 
     public async Task TeardownAsync()
@@ -125,9 +137,31 @@ internal sealed class SessionContext(
         }
     }
 
-    public void AddChat(string sender, string text, bool isLocal)
+    /// <summary>Stable key the UI uses to tell people apart, whatever their names.</summary>
+    public static string KeyOf(PlayerId id) => id.Value.ToString("N");
+
+    public static PlayerId? FindByKey(string key) =>
+        Guid.TryParseExact(key, "N", out var value) ? new PlayerId(value) : null;
+
+    /// <summary>A profile from the network, or null if it breaks the limits. Only the size and image type are checked here.</summary>
+    public static PlayerProfile? ValidateProfile(PlayerProfile? profile)
     {
-        var line = new ChatLineView(sender, text, isLocal);
+        if (profile is null || profile.Color is < 0 or >= SessionLimits.AvatarColors)
+        {
+            return null;
+        }
+
+        if (profile.Photo is { } photo && (photo.Length > SessionLimits.MaxPhotoBytes || !IsPngOrJpeg(photo)))
+        {
+            return profile with { Photo = null };
+        }
+
+        return profile;
+    }
+
+    public void AddChat(PlayerId sender, string text, bool isLocal)
+    {
+        var line = new ChatLineView(KeyOf(sender), NameOf(sender), text, isLocal, Time.GetLocalNow(), ChatLineKind.Message, Conversation: null);
         _chat.Add(line);
         if (_chat.Count > MaxChatEntries)
         {
@@ -137,12 +171,40 @@ internal sealed class SessionContext(
         Presenter.PresentChat(line);
     }
 
+    /// <summary>Adds a line to our private conversation with <paramref name="peer"/>.</summary>
+    public void AddDirect(PlayerId peer, PlayerId sender, string text, ChatLineKind kind)
+    {
+        var line = new ChatLineView(KeyOf(sender), NameOf(sender), text, sender == LocalId, Time.GetLocalNow(), kind, KeyOf(peer));
+        if (!_direct.TryGetValue(peer, out var lines))
+        {
+            _direct[peer] = lines = [];
+        }
+
+        lines.Add(line);
+        if (lines.Count > MaxDirectEntries)
+        {
+            lines.RemoveRange(0, lines.Count - MaxDirectEntries);
+        }
+
+        Presenter.PresentChat(line);
+    }
+
+    /// <summary>Our avatar, or the one a peer sent us; peers we have no profile for get a colour from their id.</summary>
+    public PlayerProfile ProfileOf(PlayerId id) =>
+        id == LocalId ? LocalProfile
+        : Peers.TryGetValue(id, out var peer) && peer.Profile is { } profile ? profile
+        : new PlayerProfile((int)((uint)id.Value.GetHashCode() % SessionLimits.AvatarColors), null);
+
+    private static bool IsPngOrJpeg(byte[] data) =>
+        data is [0x89, 0x50, 0x4E, 0x47, ..] or [0xFF, 0xD8, 0xFF, ..];
+
     public void Notify(string message) => Presenter.PresentNotice(message);
 
     public void Publish() => Presenter.PresentSession(SnapshotBuilder.Build(this));
 
     public string NameOf(PlayerId id) =>
-        Roster.Find(r => r.Id == id)?.Name
+        (id == LocalId ? LocalName : null)
+        ?? Roster.Find(r => r.Id == id)?.Name
         ?? Game?.FindPlayer(id)?.Name
         ?? (Peers.TryGetValue(id, out var peer) ? peer.Name : null)
         ?? id.ToString();

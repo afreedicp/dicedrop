@@ -1,0 +1,127 @@
+<UserControl x:Class="Ludo.Presentation.Wpf.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:Ludo.Presentation.Wpf.Views">
+    <!-- Settings sheet over the dimmed window. DataContext is the SettingsViewModel. Inside the window, so it is capture-protected too. -->
+    <Grid>
+        <Border Background="#B0000000">
+            <Border.InputBindings>
+                <MouseBinding MouseAction="LeftClick" Command="{Binding CancelCommand}" />
+            </Border.InputBindings>
+        </Border>
+
+        <Border Width="460" Margin="0,24" VerticalAlignment="Center" HorizontalAlignment="Center" CornerRadius="18" Background="{StaticResource Surface}"
+                BorderBrush="{StaticResource Border}" BorderThickness="1" Effect="{StaticResource FloatingShadow}"
+                views:Motion.Enter="True" views:Motion.EnterOffset="24">
+            <Border.InputBindings>
+                <KeyBinding Key="Escape" Command="{Binding CancelCommand}" />
+            </Border.InputBindings>
+            <DockPanel Margin="24,20,24,22">
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,18">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}" Command="{Binding CancelCommand}" AutomationProperties.Name="Close">
+                        <Path Width="14" Height="14" Stretch="Uniform" Data="{StaticResource CloseIcon}"
+                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                    </Button>
+                    <TextBlock Text="Settings" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </DockPanel>
+
+                <WrapPanel DockPanel.Dock="Bottom" HorizontalAlignment="Right" Margin="0,20,0,0">
+                    <Button Style="{StaticResource SecondaryButton}" Content="Cancel" Margin="0,0,8,0" Command="{Binding CancelCommand}" />
+                    <Button Content="Save" Command="{Binding SaveCommand}" IsDefault="True" />
+                </WrapPanel>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="0,0,6,0">
+                    <!-- Profile -->
+                    <TextBlock Style="{StaticResource Overline}" Text="PROFILE" Margin="0,0,0,10" />
+                    <DockPanel>
+                        <views:AvatarView DockPanel.Dock="Left" Size="72" Margin="0,0,18,0" VerticalAlignment="Top"
+                                          Initials="{Binding Initials}" Fill="{Binding ColorBrush}" Photo="{Binding PhotoPreview}" />
+                        <StackPanel>
+                            <WrapPanel>
+                                <Button Style="{StaticResource SecondaryButton}" Content="Choose photo…" Padding="12,6" FontSize="13"
+                                        Margin="0,0,8,8" Command="{Binding ChoosePhotoCommand}" />
+                                <Button Style="{StaticResource GhostButton}" Padding="10,6" Margin="0,0,0,8" Command="{Binding RemovePhotoCommand}"
+                                        Visibility="{Binding HasPhoto, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Text="Remove" FontSize="13" FontWeight="SemiBold" />
+                                </Button>
+                            </WrapPanel>
+                            <TextBlock Style="{StaticResource Muted}" FontSize="12" Text="Without a photo, your initials show on this colour:" TextWrapping="Wrap" />
+                            <ItemsControl ItemsSource="{Binding Colors}" Margin="0,8,0,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Margin="0,0,8,0" Cursor="Hand" FocusVisualStyle="{x:Null}" AutomationProperties.Name="Avatar colour"
+                                                Command="{Binding DataContext.PickColorCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Grid Width="26" Height="26">
+                                                        <Ellipse x:Name="Ring" Stroke="{StaticResource Text}" StrokeThickness="2" Opacity="0" />
+                                                        <Ellipse Margin="4" Fill="{Binding Brush}" />
+                                                    </Grid>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="Ring" Property="Opacity" Value="0.4" />
+                                                        </Trigger>
+                                                        <DataTrigger Value="True">
+                                                            <DataTrigger.Binding>
+                                                                <MultiBinding Converter="{x:Static views:EqualityConverter.Instance}">
+                                                                    <Binding Path="Index" />
+                                                                    <Binding Path="DataContext.Color" RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                                                                </MultiBinding>
+                                                            </DataTrigger.Binding>
+                                                            <Setter TargetName="Ring" Property="Opacity" Value="1" />
+                                                        </DataTrigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </DockPanel>
+
+                    <TextBlock Style="{StaticResource Muted}" FontSize="12" Text="Display name" Margin="0,18,0,0" />
+                    <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" MaxLength="{Binding MaxNameLength, Mode=OneTime}"
+                             Tag="Your name" />
+
+                    <!-- Notifications -->
+                    <TextBlock Style="{StaticResource Overline}" Text="NOTIFICATIONS" Margin="0,10,0,6" />
+                    <CheckBox Style="{StaticResource Switch}" IsChecked="{Binding ChatPopups}" Margin="0,6">
+                        <StackPanel>
+                            <TextBlock Text="Chat pop-ups" />
+                            <TextBlock Style="{StaticResource Muted}" FontSize="12" Text="Show new messages in the corner while DiceDrop is in the background." TextWrapping="Wrap" />
+                        </StackPanel>
+                    </CheckBox>
+                    <CheckBox Style="{StaticResource Switch}" IsChecked="{Binding NudgeSound}" Margin="0,6">
+                        <TextBlock Text="Play a sound when someone nudges me" />
+                    </CheckBox>
+                    <CheckBox Style="{StaticResource Switch}" IsChecked="{Binding NudgeShake}" Margin="0,6">
+                        <TextBlock Text="Shake the window when someone nudges me" />
+                    </CheckBox>
+
+                    <!-- General -->
+                    <TextBlock Style="{StaticResource Overline}" Text="GENERAL" Margin="0,14,0,6" />
+                    <CheckBox Style="{StaticResource Switch}" IsChecked="{Binding StartWithWindows}" Margin="0,6">
+                        <StackPanel>
+                            <TextBlock Text="Start with Windows" />
+                            <TextBlock Style="{StaticResource Muted}" FontSize="12" Text="Opens in the tray, so chat and nudges still reach you." TextWrapping="Wrap" />
+                        </StackPanel>
+                    </CheckBox>
+
+                    <Border Margin="0,12,0,0" Padding="12,8" CornerRadius="10" Background="#33E5322D"
+                            Visibility="{Binding Error, Converter={x:Static views:NullToVisibilityConverter.Instance}}">
+                        <TextBlock Text="{Binding Error}" TextWrapping="Wrap" FontSize="13" />
+                    </Border>
+                </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

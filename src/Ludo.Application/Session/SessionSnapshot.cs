@@ -55,35 +55,70 @@ public sealed record SessionSnapshot(
     IReadOnlyList<string> JoinAddresses,
     MatchView? Match,
     IReadOnlyList<string> Log,
-    IReadOnlyList<ChatLineView> Chat)
+    IReadOnlyList<ChatLineView> Chat,
+    IReadOnlyList<DirectChatView> DirectChats,
+    string LocalKey)
 {
-    public static SessionSnapshot Empty { get; } = new(SessionStage.Idle, string.Empty, false, [], false, [], null, [], []);
+    public static SessionSnapshot Empty { get; } = new(SessionStage.Idle, string.Empty, false, [], false, [], null, [], [], [], string.Empty);
 }
 
+/// <param name="Key">Stable id for this member within the lobby; use it to message, nudge or invite them.</param>
 /// <param name="InGame">Holds a seat in the running game and has not left it.</param>
-public sealed record MemberView(string Name, bool IsHost, bool IsLocal, bool IsReady, bool InGame);
+public sealed record MemberView(string Key, string Name, bool IsHost, bool IsLocal, bool IsReady, bool InGame, ProfileView Profile);
 
+/// <param name="Color">Index into the avatar palette, 0 to <see cref="SessionLimits.AvatarColors"/> - 1.</param>
+/// <param name="Photo">PNG or JPEG bytes, unchecked beyond type and size: decode defensively.</param>
+public sealed record ProfileView(int Color, byte[]? Photo);
+
+public enum ChatLineKind
+{
+    Message,
+
+    /// <summary>A nudge, shown in the private conversation it belongs to.</summary>
+    Nudge,
+}
+
+/// <param name="SenderKey">The sender's <see cref="MemberView.Key"/>.</param>
 /// <param name="Sender">The sender's name when the line was sent.</param>
-public sealed record ChatLineView(string Sender, string Text, bool IsLocal);
+/// <param name="Time">When this PC sent or received it; peers do not share clocks.</param>
+/// <param name="Conversation">Null for the lobby chat, else the key of the other person in a private conversation.</param>
+public sealed record ChatLineView(
+    string SenderKey,
+    string Sender,
+    string Text,
+    bool IsLocal,
+    DateTimeOffset Time,
+    ChatLineKind Kind,
+    string? Conversation);
+
+/// <param name="PeerKey">The other person's key.</param>
+/// <param name="IsPresent">They are still in the lobby, so we can write to them.</param>
+public sealed record DirectChatView(string PeerKey, string PeerName, bool IsPresent, IReadOnlyList<ChatLineView> Lines);
+
+/// <summary>Someone nudged us.</summary>
+public sealed record NudgeView(string FromKey, string From);
 
 /// <summary>Someone in the lobby asked who wants to play.</summary>
-public sealed record InviteView(Guid MatchId, string From);
+public sealed record InviteView(Guid MatchId, string From, string GameName);
 
 /// <param name="IsPlaying">We hold a seat and have not left; false for spectators.</param>
+/// <param name="IsInvited">We may join: we were on the invite list, or everyone was invited.</param>
 /// <param name="CanStart">We are the initiator and enough players have said yes.</param>
 public sealed record MatchView(
     Guid Id,
+    GameInfo GameType,
     string InitiatorName,
     bool IsInitiator,
     MatchPhaseView Phase,
     InviteAnswer LocalAnswer,
+    bool IsInvited,
     bool IsPlaying,
     IReadOnlyList<MatchMemberView> Invitees,
     bool CanStart,
     string? EndReason,
     GameStateView? Game);
 
-public sealed record MatchMemberView(string Name, bool IsInitiator, bool IsLocal, InviteAnswer Answer);
+public sealed record MatchMemberView(string Key, string Name, bool IsInitiator, bool IsLocal, InviteAnswer Answer);
 
 /// <param name="ArmCount">Arms drawn on the board: one per player, never fewer than four.</param>
 public sealed record BoardLayoutView(
