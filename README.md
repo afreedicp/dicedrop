@@ -16,7 +16,7 @@ Copy `DiceDrop.exe` to any Windows 10 (2004+) or Windows 11 PC and run it. On fi
 
 For development: `dotnet build DiceDrop.slnx`, `dotnet test DiceDrop.slnx`.
 
-**Updates.** At startup and every 6 hours after that, DiceDrop asks GitHub for the latest release. If it is newer than the running version, a banner appears at the bottom right, and clicking it opens the release page in your browser. Nothing is downloaded or installed automatically. Without internet access the check fails quietly (the reason shows in the network log). Local builds are versioned 0.0.0 and never check; release builds get their version from the tag.
+**Updates.** At startup and every 6 hours after that, DiceDrop asks GitHub for the latest release. If it is newer than the running version, a banner appears at the bottom right, and clicking it opens the release page in your browser. Nothing is downloaded or installed automatically. Without internet access the check fails quietly (the reason shows in the network log). Release builds get their version from the tag. `build.cmd` uses the newest `vX.Y.Z` tag behind the current commit (or `DICEDROP_VERSION` if set, e.g. `set DICEDROP_VERSION=0.1.1`); a build with no tag, or a plain `dotnet build`, is versioned 0.0.0 and never checks.
 
 ## Playing
 
