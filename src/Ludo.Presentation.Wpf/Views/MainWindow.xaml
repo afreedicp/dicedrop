@@ -5,7 +5,7 @@
                           xmlns:vm="clr-namespace:Ludo.Presentation.Wpf.ViewModels"
                           xmlns:views="clr-namespace:Ludo.Presentation.Wpf.Views"
                           Title="DiceDrop"
-                          Width="1180" Height="800" MinWidth="900" MinHeight="640"
+                          Width="1260" Height="820" MinWidth="980" MinHeight="640"
                           WindowStartupLocation="CenterScreen"
                           Background="{StaticResource Background}">
     <security:ProtectedWindow.Resources>
@@ -133,6 +133,10 @@
                         Command="{Binding Update.DismissCommand}" />
             </StackPanel>
         </Border>
+
+        <!-- Settings sheet over everything else. -->
+        <views:SettingsView Grid.RowSpan="2" DataContext="{Binding Settings}"
+                            Visibility="{Binding IsOpen, Converter={StaticResource BoolToVisibility}}" />
 
         <!-- In-window notice instead of a MessageBox: a separate window would be one more thing to protect. -->
         <Border Grid.RowSpan="2" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,16,0,0" Padding="16,10"

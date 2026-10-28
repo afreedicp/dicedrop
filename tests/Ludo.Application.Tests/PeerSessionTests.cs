@@ -371,6 +371,80 @@ public sealed class PeerSessionTests
         }
     }
 
+    [Fact]
+    public async Task Members_share_avatars_message_privately_and_nudge()
+    {
+        var peers = Enumerable.Range(0, 3).Select(i => new TestPeer($"P{i}")).ToArray();
+        try
+        {
+            // An avatar set before joining goes out in the Hello; a later change is broadcast.
+            byte[] png = [0x89, 0x50, 0x4E, 0x47, 1, 2, 3];
+            await peers[1].App.UpdateProfile.ExecuteAsync(5, png);
+            await FormLobbyAsync(peers);
+            await WaitUntil(
+                () => peers.All(p => p.Latest.Members.Single(m => m.Name == "P1").Profile is { Color: 5, Photo.Length: 7 }),
+                "avatar did not reach everyone");
+            await peers[1].App.UpdateProfile.ExecuteAsync(2, null);
+            await WaitUntil(
+                () => peers.All(p => p.Latest.Members.Single(m => m.Name == "P1").Profile is { Color: 2, Photo: null }),
+                "avatar change did not reach everyone");
+            await Assert.ThrowsAsync<SessionException>(() => peers[1].App.UpdateProfile.ExecuteAsync(1, [1, 2, 3]));
+
+            var p0 = peers[0].Latest.LocalKey;
+            var p2 = peers[2].Latest.LocalKey;
+            await peers[2].App.SendDirectChat.ExecuteAsync(p0, "just us");
+            await WaitUntil(() => peers[0].Latest.DirectChats.Any(d => d.PeerKey == p2 && d.Lines.Count == 1), "private line never arrived");
+            Assert.Equal("just us", peers[0].Latest.DirectChats.Single().Lines[0].Text);
+            Assert.Equal(p0, peers[2].Latest.DirectChats.Single().PeerKey);
+            Assert.True(peers[2].Latest.DirectChats.Single().Lines[0].IsLocal);
+            Assert.Empty(peers[1].Latest.DirectChats);
+            Assert.All(peers, p => Assert.Empty(p.Latest.Chat));
+
+            await peers[0].App.Nudge.ExecuteAsync(p2);
+            await WaitUntil(() => peers[2].Nudges.Count == 1, "nudge never arrived");
+            Assert.Equal("P0", peers[2].Nudges.Single().From);
+            await WaitUntil(
+                () => peers[2].Latest.DirectChats.Single(d => d.PeerKey == p0).Lines.Any(l => l.Kind == ChatLineKind.Nudge),
+                "nudge not shown in the conversation");
+            await Assert.ThrowsAsync<SessionException>(() => peers[0].App.Nudge.ExecuteAsync(p2));
+            await Assert.ThrowsAsync<SessionException>(() => peers[0].App.Nudge.ExecuteAsync(peers[0].Latest.LocalKey));
+        }
+        finally
+        {
+            await DisposeAllAsync(peers);
+        }
+    }
+
+    [Fact]
+    public async Task Only_invited_members_can_join_a_game_and_the_rest_can_watch()
+    {
+        var peers = Enumerable.Range(0, 3).Select(i => new TestPeer($"P{i}")).ToArray();
+        try
+        {
+            await FormLobbyAsync(peers);
+            var invited = peers[2].Latest.LocalKey;
+            await peers[0].App.ProposeGame.ExecuteAsync(GameCatalog.Ludo.Id, [invited]);
+            await WaitUntil(() => peers.All(p => p.Latest.Match?.Phase == MatchPhaseView.Inviting), "invite did not reach everyone");
+
+            Assert.True(peers[2].Latest.Match!.IsInvited);
+            Assert.False(peers[1].Latest.Match!.IsInvited);
+            Assert.Equal(GameCatalog.Ludo, peers[1].Latest.Match!.GameType);
+            Assert.Equal(["P0", "P2"], peers[0].Latest.Match!.Invitees.Select(i => i.Name).Order());
+            await Assert.ThrowsAsync<SessionException>(() => peers[1].App.AcceptInvite.ExecuteAsync());
+
+            await peers[2].App.AcceptInvite.ExecuteAsync();
+            await WaitUntil(() => peers[0].Latest.Match!.CanStart, "answer never arrived");
+            await peers[0].App.StartGame.ExecuteAsync();
+            await WaitUntil(() => peers.All(p => p.Latest.Match?.Game is not null), "game did not reach everyone");
+            Assert.Equal(2, peers[1].Latest.Match!.Game!.Seats.Count);
+            Assert.False(peers[1].Latest.Match!.IsPlaying);
+        }
+        finally
+        {
+            await DisposeAllAsync(peers);
+        }
+    }
+
     /// <summary>Peer 0 hosts and the rest join; returns the port once everyone is connected to everyone.</summary>
     private static async Task<int> FormLobbyAsync(TestPeer[] peers)
     {
@@ -470,6 +544,10 @@ public sealed class PeerSessionTests
         public void PresentInvite(InviteView invite)
         {
         }
+
+        public System.Collections.Concurrent.ConcurrentQueue<NudgeView> Nudges { get; } = new();
+
+        public void PresentNudge(NudgeView nudge) => Nudges.Enqueue(nudge);
 
         /// <summary>A bot: rolls on its turn and always moves its first movable token, until the game ends for it.</summary>
         public async Task PlayAsync(CancellationToken cancellation)
