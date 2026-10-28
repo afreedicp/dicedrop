@@ -2,7 +2,9 @@ using System.Windows.Input;
 using Ludo.Application;
 using Ludo.Application.Common;
 using Ludo.Application.Session;
+using Ludo.Application.UseCases;
 using Ludo.Presentation.Wpf.Presenters;
+using Ludo.Presentation.Wpf.Shell;
 
 namespace Ludo.Presentation.Wpf.ViewModels;
 
@@ -16,15 +18,17 @@ public sealed class MainViewModel : ObservableObject
     private Guid? _viewing;
     private Guid? _autoOpened;
 
-    internal MainViewModel(LudoApplication app, WpfSessionPresenter presenter, WpfDiagnosticLog diagnostics)
+    internal MainViewModel(LudoApplication app, WpfSessionPresenter presenter, WpfDiagnosticLog diagnostics, CheckForUpdateUseCase checkForUpdate)
     {
         Diagnostics = new DiagnosticsViewModel(diagnostics, ShowError);
+        Update = new UpdateViewModel(checkForUpdate, ShowError);
 
         // No setup screen: play under the Windows account name.
         Searching = new SearchingViewModel(app.AutoLobby.Start(Environment.UserName));
         Lobby = new LobbyViewModel(app, ShowError, ViewGame);
         Game = new GameViewModel(app, ShowError, Lobby, BackToLobby);
         DismissNoticeCommand = new AsyncCommand(_ => { Notice = null; return Task.CompletedTask; }, ShowError);
+        OpenSourceCodeCommand = new AsyncCommand(_ => { ProjectLinks.OpenInBrowser(ProjectLinks.SourceCode); return Task.CompletedTask; }, ShowError);
 
         presenter.SessionChanged += Apply;
         presenter.NoticeRaised += message => Notice = message;
@@ -35,6 +39,8 @@ public sealed class MainViewModel : ObservableObject
     public SearchingViewModel Searching { get; }
 
     public DiagnosticsViewModel Diagnostics { get; }
+
+    public UpdateViewModel Update { get; }
 
     public LobbyViewModel Lobby { get; }
 
@@ -53,6 +59,9 @@ public sealed class MainViewModel : ObservableObject
     }
 
     public ICommand DismissNoticeCommand { get; }
+
+    /// <summary>Opens the project's GitHub repository in the browser.</summary>
+    public ICommand OpenSourceCodeCommand { get; }
 
     private void Apply(SessionSnapshot snapshot)
     {

@@ -16,6 +16,8 @@ Copy `DiceDrop.exe` to any Windows 10 (2004+) or Windows 11 PC and run it. On fi
 
 For development: `dotnet build DiceDrop.slnx`, `dotnet test DiceDrop.slnx`.
 
+**Updates.** At startup and every 6 hours after that, DiceDrop asks GitHub for the latest release. If it is newer than the running version, a banner appears at the bottom right, and clicking it opens the release page in your browser. Nothing is downloaded or installed automatically. Without internet access the check fails quietly (the reason shows in the network log). Local builds are versioned 0.0.0 and never check; release builds get their version from the tag.
+
 ## Playing
 
 1. Everyone opens `DiceDrop.exe`. There is no menu: each copy finds the lobby on the network and joins it, or opens one if there is none yet. Players appear under their Windows account name.
@@ -109,3 +111,7 @@ This defeats PrintScreen, Snipping Tool / Win+Shift+S, Xbox Game Bar, OBS, Share
 ## Contributing
 
 Contributions are welcome: bug reports, fixes, features, tests and docs. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full step-by-step guide, from forking and cloning to opening a pull request, with every git command you need.
+
+## License
+
+DiceDrop is open source under the **[MIT License](LICENSE)**. You are free to use, copy, modify and distribute it, including commercially, as long as the copyright notice and license text are kept.

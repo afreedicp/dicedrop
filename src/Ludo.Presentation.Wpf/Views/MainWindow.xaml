@@ -61,18 +61,58 @@
             </DockPanel>
         </Border>
 
-        <Button VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="6" Padding="10,3" FontSize="12"
-                Content="Network log (F12)" Opacity="0.8" Command="{Binding Diagnostics.ToggleCommand}">
-            <Button.Style>
-                <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+        <!-- Footer tools, bottom left: hidden while the network log is open. -->
+        <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="6" Orientation="Horizontal" Opacity="0.8">
+            <StackPanel.Style>
+                <Style TargetType="StackPanel">
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding Diagnostics.IsOpen}" Value="True">
                             <Setter Property="Visibility" Value="Collapsed" />
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
-            </Button.Style>
-        </Button>
+            </StackPanel.Style>
+            <Button Style="{StaticResource SecondaryButton}" Padding="10,3" FontSize="12"
+                    Content="Network log (F12)" Command="{Binding Diagnostics.ToggleCommand}" />
+            <!-- GitHub mark: opens the source code. Named for screen readers, since tooltips are suppressed app-wide. -->
+            <Button Margin="8,0,0,0" VerticalAlignment="Center" Cursor="Hand" AutomationProperties.Name="Source code on GitHub"
+                    Command="{Binding OpenSourceCodeCommand}">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="Transparent" Padding="2">
+                            <Path x:Name="Mark" Width="20" Height="20" Stretch="Uniform" Fill="{StaticResource TextMuted}"
+                                  Data="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Mark" Property="Fill" Value="{StaticResource Text}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Mark" Property="Opacity" Value="0.75" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+        </StackPanel>
+
+        <!-- Update banner: a newer release is out. Clicking it opens the release page in the browser. -->
+        <Border VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="6" Padding="4" CornerRadius="10"
+                Background="{StaticResource Surface}" BorderBrush="{StaticResource Accent}" BorderThickness="1"
+                Visibility="{Binding Update.IsVisible, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel Orientation="Horizontal">
+                <Button Padding="12,5" FontSize="12" Command="{Binding Update.OpenCommand}">
+                    <TextBlock Foreground="{StaticResource AccentText}" FontSize="12">
+                        <Run Text="Update available:" />
+                        <Run Text="{Binding Update.LatestTag, Mode=OneWay}" FontWeight="Bold" />
+                        <Run Text="{Binding Update.CurrentVersion, StringFormat=(you have {0}), Mode=OneWay}" FontWeight="Normal" />
+                        <Run Text="· Download" />
+                    </TextBlock>
+                </Button>
+                <Button Style="{StaticResource SecondaryButton}" Content="✕" Padding="8,4" FontSize="11" Margin="4,0,0,0"
+                        Command="{Binding Update.DismissCommand}" />
+            </StackPanel>
+        </Border>
 
         <!-- In-window notice instead of a MessageBox: a separate window would be one more thing to protect. -->
         <Border Grid.RowSpan="2" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,16,0,0" Padding="16,10"

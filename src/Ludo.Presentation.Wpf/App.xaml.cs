@@ -1,8 +1,11 @@
+using System.Reflection;
 using System.Windows;
 using Ludo.Application;
+using Ludo.Application.UseCases;
 using Ludo.Infrastructure.Crypto;
 using Ludo.Infrastructure.Discovery;
 using Ludo.Infrastructure.Networking;
+using Ludo.Infrastructure.Updates;
 using Ludo.Presentation.Wpf.Presenters;
 using Ludo.Presentation.Wpf.Security;
 using Ludo.Presentation.Wpf.Shell;
@@ -20,6 +23,8 @@ public partial class App : System.Windows.Application
     private ChatToastController? _chatToasts;
     private SingleInstance? _instance;
     private TrayShell? _tray;
+    private GitHubReleaseFeed? _releases;
+    private MainViewModel? _viewModel;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -48,7 +53,13 @@ public partial class App : System.Windows.Application
             TimeProvider.System,
             diagnostics);
 
-        var window = new MainWindow { DataContext = new MainViewModel(_app, presenter, diagnostics) };
+        // The release workflow stamps the tag's version into the exe; local builds stay 0.0.0 and skip the check.
+        var version = Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0);
+        _releases = new GitHubReleaseFeed(ProjectLinks.Owner, ProjectLinks.Repository, $"DiceDrop/{version.ToString(3)}");
+        var checkForUpdate = new CheckForUpdateUseCase(_releases, version, diagnostics);
+
+        _viewModel = new MainViewModel(_app, presenter, diagnostics, checkForUpdate);
+        var window = new MainWindow { DataContext = _viewModel };
         window.ProtectionFailed += (_, _) =>
         {
             MessageBox.Show(
@@ -71,12 +82,16 @@ public partial class App : System.Windows.Application
         {
             window.Show();
         }
+
+        _viewModel.Update.Start();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
         // Tell peers we are leaving; don't hang the exit if the network is wedged.
         _app?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(2));
+        _viewModel?.Update.Dispose();
+        _releases?.Dispose();
         _discovery?.Dispose();
         _windowGuard?.Dispose();
         _tray?.Dispose();
