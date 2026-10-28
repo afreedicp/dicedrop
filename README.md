@@ -1,122 +1,128 @@
-<p align="center"><img src="assets/logo.svg" width="128" alt="DiceDrop logo"></p>
+<p align="center">
+  <img src="assets/logo.png" width="120" alt="DiceDrop Logo" />
+</p>
 
-# DiceDrop
+<h1 align="center">DiceDrop</h1>
 
-Serverless, peer-to-peer Ludo for **2 to 8 players** on Windows. It ships as one portable `DiceDrop.exe`: no installer, no .NET install, nothing written to the registry. The game window is **excluded from screen capture**.
+<p align="center">
+  <strong>One EXE. No server. No account. No cheating.</strong><br>
+  Serverless, peer-to-peer Ludo for 2 to 8 players on Windows.
+</p>
 
-## Build and run
+<p align="center">
+  <a href="https://github.com/i-oms/dicedrop/releases/latest"><img src="https://img.shields.io/github/v/release/i-oms/dicedrop?style=flat-square&label=Download&color=blue" /></a>
+  <a href="https://github.com/i-oms/dicedrop/actions"><img src="https://img.shields.io/github/actions/workflow/status/i-oms/dicedrop/release.yml?style=flat-square&label=Build" /></a>
+  <img src="https://img.shields.io/github/license/i-oms/dicedrop?style=flat-square" />
+  <img src="https://img.shields.io/badge/.NET-8.0-512BD4?style=flat-square" />
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-blue?style=flat-square" />
+  <img src="https://img.shields.io/github/downloads/i-oms/dicedrop/total?style=flat-square" />
+</p>
 
-```
-build.cmd                # runs all tests, then writes dist\DiceDrop.exe (self-contained, ~59 MB)
-```
+<p align="center">
+  <a href="https://github.com/i-oms/dicedrop/releases/latest">⬇️ Download DiceDrop.exe</a> •
+  <a href="#-demo">Demo</a> •
+  <a href="#-how-it-works">How it works</a> •
+  <a href="docs/TECHNICAL.md">Technical Docs</a>
+</p>
 
-It works from cmd, PowerShell (`.\build.cmd`), Git Bash (`./build.cmd`) or a double-click. Pass a folder to publish somewhere other than `dist`.
+---
 
-Copy `DiceDrop.exe` to any Windows 10 (2004+) or Windows 11 PC and run it. On first launch, Windows Firewall asks whether to allow it. Choose **Allow** for private networks, because peers connect directly to each other.
+### 🎲 What is this?
 
-For development: `dotnet build DiceDrop.slnx`, `dotnet test DiceDrop.slnx`.
+**DiceDrop** is a portable Ludo that works like SHAREit works — open the EXE on every PC in the same Wi-Fi/LAN and you instantly share a lobby. No central server, no login, no install, no data leaves your network.
 
-**Updates.** At startup and every 6 hours after that, DiceDrop asks GitHub for the latest release. If it is newer than the running version, a banner appears at the bottom right, and clicking it opens the release page in your browser. Nothing is downloaded or installed automatically. Without internet access the check fails quietly (the reason shows in the network log). Release builds get their version from the tag. `build.cmd` uses the newest `vX.Y.Z` tag behind the current commit (or `DICEDROP_VERSION` if set, e.g. `set DICEDROP_VERSION=0.1.1`); a build with no tag, or a plain `dotnet build`, is versioned 0.0.0 and never checks.
+> `DiceDrop.exe` — double-click and play. Everything is P2P encrypted, chats are never saved, window can't be screen-captured.
 
-## Playing
+[Board Preview](assets/screenshot-board.png)
 
-1. Everyone opens `DiceDrop.exe`. There is no menu: each copy finds the lobby on the network and joins it, or opens one if there is none yet. Players appear under their Windows account name until they pick another in **Settings** (the gear next to your name).
-2. Whoever opened the lobby is its host. If two players open lobbies at the same moment, the smaller one closes and its players move to the other within a second or two, so everyone ends up together. If the host leaves, the longest-standing member takes over and nothing else changes.
-3. The window is a messenger: people and chats on the left, the open chat in the middle, games on the right. **Lobby** is the group chat; click a person for a private chat. In a private chat, **Nudge** shakes their window, plays a sound and pops up a notice (once every 10 seconds; each player can turn the sound and shake off in Settings). The tray icon's **Send message…** writes to the lobby or a person without opening the window.
-4. **Anyone** can pick a game on the right and click **Invite players**, then choose who to invite (or use **Invite to Ludo** in a private chat). Invitees get an invite (in the lobby, or as a corner notice if DiceDrop is in the background) and choose **Join game** or **Not now**. Whoever started it sees who is in and clicks **Begin game** when ready.
-5. Roll by clicking the dice or pressing **Space**, then click one of your bouncing pawns. Pawns hop square by square; a captured pawn slides back to its yard.
-6. Members who are not playing can **Watch** the game live from the lobby. Players can **Leave game** at any time and keep watching. Whoever started the game can **Stop game** for everyone at any time. One game runs per lobby at a time, and the lobby (with its chat) stays open throughout, so the next game can start as soon as this one ends.
+### ✨ Features
 
-**Settings** (name, profile photo or initials colour, chat pop-ups, nudge sound and shake) are saved in `%APPDATA%\DiceDrop\settings.json`; **Start with Windows** uses the usual per-user startup entry. Profile photos are shrunk to a small JPEG and shared only with the lobby. Chats are never saved.
+- **2 to 8 Players** — Classic cross board for 2-4, star board for 5-8 players (built dynamically)
+- **Zero Server** — Full mesh P2P over TCP, discovery via UDP broadcast. Host is just the lobby keeper.
+- **Fair Dice, No Trusted Roller** — Each peer commits a hash chain anchor at game start. Dice = `SHA256(round || all_reveals) mod 6 + 1`. No one can steer or predict it.
+- **Spectator Mode** — Not playing? Watch live. Leave a game and keep watching. Late joiners replay full history.
+- **Built-in Messenger** — Lobby group chat + private chats + Nudge (shake + sound)
+- **Anti-Cheat by Design** — `WDA_EXCLUDEFROMCAPTURE` — blocks PrintScreen, Snipping Tool, OBS, Teams/Zoom/Discord screen share
+- **Portable & Private** — One EXE ~59MB self-contained, settings in `%APPDATA%\DiceDrop\settings.json`, nothing in registry
+- **Auto-Update Aware** — Checks GitHub releases on start + every 6h, shows banner, never auto-installs
 
-**Compatibility:** this version speaks protocol 3 (profiles, private chat, nudges, game invites). Older copies cannot join its lobbies, so everyone needs to update.
+### 🎬 Demo
 
-The board is the classic cross-shaped Ludo board, turned so your own yard is at the bottom left. Two or three players use the full four-arm board (two players sit in opposite corners); five to eight players get a six-, seven- or eight-armed star built from the same arms.
+> Replace these with your actual recordings (phone recording is fine since screen capture is blocked!)
 
-Rules: a 6 brings a token out; 6, a capture, or bringing a token home earns another roll; three 6s in a row forfeit the turn; start and ★ squares are safe; you need the exact roll to finish. The game continues until everyone has a finishing place.
-
-**Playing over the internet:** the game has no relay server and finds lobbies by LAN broadcast, so peers must share a network. A virtual LAN that carries broadcasts (ZeroTier, Radmin VPN) works; Tailscale does not forward broadcasts.
-
-## Ports
-
-No port number can be guaranteed free on Windows. Its dynamic range can cover almost every port (1024�65535 on some PCs), and Hyper-V/WSL reserve random blocks. So the game never *depends* on a particular port:
-
-- **Game traffic (TCP).** The host tries port 47777 and binds it exclusively, so no other program can share it or intercept peers. If something already holds it, the host takes any free port the OS offers instead. Joiners always use an OS-chosen port. Anything that connects without the game's handshake is dropped.
-- **Discovery (UDP broadcast).** Hosts send a beacon once a second to ports 47778, 45778 and 43778. Browsers listen on every one they can bind, so discovery keeps working if one is taken. The beacon carries the host's real game port, so a fallback port is found automatically. Wi-Fi often drops broadcasts, so once a PC is heard, beacons also go to it directly (unicast, which Wi-Fi delivers reliably) for as long as it keeps announcing.
-- **Auto-lobby.** While idle, joins the best lobby it hears about (most players, then lowest id), or opens one after 1.5-3 s of silence. A host whose lobby is outranked by another that has room for its players closes it and moves there; its guests follow. A lobby with a game being set up or played never merges away. Lobbies keep announcing themselves during games, so latecomers join and can watch. A lobby you joined or tried to join is skipped for 20 seconds, which stops lobbies bouncing players around without letting one failed attempt keep PCs apart. Hearing can be one-way (a firewall on one PC), so a host whose lower-ranked rival hasn't moved to it within 6 s moves there itself.
-
-## When PCs don't find each other
-
-Press **F12** (or the *Network log* button, bottom left) on both PCs. The log is kept in memory only and shows, in order:
-
-- **env**: this PC's adapters, which network profile is in use (Private/Public), and the Windows Firewall rules for this exact exe. Lines starting with `PROBLEM` name the cause and the fix, such as a BLOCK rule Windows added when its prompt was cancelled, or a rule that only covers Private while the network is Public. Rules are tied to the exe's path, so moving `DiceDrop.exe` needs a new rule.
-- **udp**: which discovery ports opened, where beacons go, and whom we heard (every 10 s when that changes, else once a minute). "Heard only beacons from this PC" means no other PC's beacons arrive: check the firewall on both PCs, that both are on the same subnet, and that the router's Wi-Fi client (AP) isolation is off.
-- **tcp**: connections in and out with the reason a connect failed (timed out: usually the host's firewall; refused: nothing listening).
-- **lobby**: what auto-lobby decided (join, host, merge) and why.
-
-*Copy all* puts the log on the clipboard so both PCs' logs can be compared.
-
-## Architecture
-
-Clean Architecture. Dependencies point inward only, and the compiler enforces it through project references.
-
-```
- Presentation.Wpf ──► Application ──► Domain
-        │                  ▲
-        └──► Infrastructure┘
-```
-
-| Project | Responsibility | May depend on |
+| Lobby & Chat | Inviting & Rolling | 8-Player Star Board |
 |---|---|---|
-| `Ludo.Domain` | Entities and rules: `LudoGame` aggregate, N-player `BoardTopology` (at least four arms), `GameRules`, domain events. Pure and deterministic, with no I/O, time or randomness. | nothing |
-| `Ludo.Application` | Use cases (`AutoLobby`, `HostLobby`, `JoinLobby`, `ProposeGame`, `AcceptInvite`/`DeclineInvite`, `StartGame`, `RollDice`, `MoveToken`, `LeaveGame`, `StopGame`, `LeaveSession`), **ports** (`IPeerNetwork`, `ILobbyDiscovery`, `ICryptoProvider`, `ISessionPresenter`), the sync protocol and fair dice. | Domain |
-| `Ludo.Infrastructure` | Adapters for the ports: TCP mesh transport, UDP LAN discovery, SHA-256/CSPRNG, JSON wire format. | Application |
-| `Ludo.Presentation.Wpf` | MVVM UI, board renderer, capture protection, and the **composition root** (`App.xaml.cs`), the only place that knows every layer. | Application, Infrastructure |
+| [lobby](assets/demo-lobby.gif) | [invite](assets/demo-invite.gif) | [star](assets/screenshot-8p.png) |
 
-The UI never touches the domain. It receives immutable read models (`SessionSnapshot`) through the `ISessionPresenter` output port.
+### 📥 Quick Start
 
-## How peers stay in sync
+1. Download **[DiceDrop.exe from Latest Release](https://github.com/i-oms/dicedrop/releases/latest)**
+2. Copy to every friend's PC (Windows 10 2004+ / 11)
+3. Allow firewall when Windows asks (Private network)
+4. Open — you auto-join the lobby. Pick name in ⚙️ Settings.
 
-- **Mesh, not server.** Every lobby member connects to every other. The host only keeps the member list and greets newcomers; if it leaves, the first remaining member in join order takes over, and every peer picks the same one because they all hold the same list.
-- **Games inside the lobby.** Whoever proposes a game is its *initiator*. If two invites cross, the one with the lower id wins on every peer. The initiator seats itself plus everyone who accepted and sends the start message. Only the initiator can stop the game, and the game ends if the initiator leaves the lobby.
-- **Spectators** take no part in the dice protocol. The initiator keeps a record of every roll, move and drop-out and streams it to everyone not playing. Late joiners and players who leave get the whole record and replay it on a fresh board, and a spectator that notices a gap asks for it again.
-- **Deterministic lockstep.** Ludo is turn-based, so only the current player may act. Each peer applies every roll and move to its own `LudoGame` and validates it against the rules. Illegal or out-of-turn actions are rejected locally.
-- **Ordering.** All session state changes run one at a time on a single executor. A message that arrives ahead of one it depends on (for example a move before the roll it belongs to) is parked and retried.
-- **Desync detection.** Every roll request carries a state digest. A mismatch is logged on every peer.
+That's it. No port forwarding.
 
-### Fair dice, with no trusted roller
+**Playing over Internet?** Use a virtual LAN that forwards broadcasts: **ZeroTier** or **Radmin VPN** works. Tailscale does NOT.
 
-Each player generates a fresh secret hash chain for every game and publishes its end (the *anchor*) when it accepts the invite. The initiator freezes all anchors into the start message, and each player cross-checks them against the anchors it received directly. For roll *i*, every peer reveals chain value *i*, which anyone can verify against value *i − 1*. The die is `SHA-256(i ‖ all reveals in seat order) mod 6 + 1`.
+<details>
+<summary><b>When PCs don't find each other? (Click for fix)</b></summary>
 
-All values are fixed before the first roll, so nobody (not even whoever reveals last) can steer a die, and nobody can predict a die until every peer has revealed. A forged reveal fails verification on every peer, and the forger is removed.
+Press `F12` or `Network log` button. It shows in order:
+- `env`: adapters + firewall rules (look for `PROBLEM`)
+- `udp`: which discovery ports opened, who we heard
+- `tcp`: connection fails (timeout = host firewall, refused = nothing listening)
+- `lobby`: auto-lobby decision
 
-## Screen-capture protection
+Copy logs from both PCs and compare. 90% of cases = Windows Firewall BLOCK rule created when prompt was cancelled. Delete it and re-allow.
 
-What it does:
+</details>
 
-- The window gets `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` in `OnSourceInitialized`, *before it is ever shown*, so no frame is ever capturable. Captures show whatever is behind the window. On older Windows 10 builds it falls back to `WDA_MONITOR` (captures show black).
-- **Fails closed.** If protection cannot be applied, the app refuses to run. A 200 ms watchdog re-checks the affinity. If something strips it, the content is removed at once and the window closes unless protection can be restored.
-- A process-wide WinEvent hook protects every other top-level window the process creates (popups, menus, dialogs). Tooltips and context menus are disabled app-wide, and notices are shown inside the window rather than in message boxes.
+### 🕹️ How to Play
 
-This defeats PrintScreen, Snipping Tool / Win+Shift+S, Xbox Game Bar, OBS, ShareX, Teams/Zoom/Discord/Meet screen sharing, and any tool using GDI, Windows.Graphics.Capture or DXGI desktop duplication.
+1.  **Lobby auto-forms** — first opener is host, if two open at same time, smaller merges into bigger in ~1s. If host leaves, longest-standing member takes over.
+2.  **Invite** — Anyone clicks a game on right -> Invite players, or Invite to Ludo in private chat.
+3.  **Roll** — Click dice or press Space, then click bouncing pawn. 6 brings token out, 6 / capture / home = extra roll, 3x6 = forfeit, ★ and start = safe, exact roll to finish.
+4.  **Watch / Leave** — Watch live, leave anytime, initiator can Stop for all.
 
-**What no software can prevent** (being explicit, since "at any cost" isn't technically achievable on a PC the player controls):
+### 🛠️ Build from Source
 
-- A phone camera pointed at the monitor, or an HDMI capture card / video splitter.
-- A user with admin rights running a kernel driver, a patched DWM, or code injected into this process.
-- Running the game inside a VM and capturing from the host. Remote Desktop and similar tools *are* covered in normal sessions.
+```bash
+# Windows, any shell
+build.cmd                # tests + dist\DiceDrop.exe (self-contained)
 
-## Limitations and ideas
+# Dev
+dotnet build DiceDrop.slnx
+dotnet test DiceDrop.slnx
+```
 
-- No reconnection: a peer that drops mid-game is removed and the game continues without it.
-- If a peer crashes halfway through broadcasting its dice reveal, peers can in rare cases disagree. The state digest detects it but does not repair it.
-- No relay or NAT traversal (see "Playing over the internet").
-- Possible next steps: turn timer, rule variants in the lobby (`GameRules` already supports them), reconnect with state transfer, sound.
+Release version comes from git tag `vX.Y.Z` or `DICEDROP_VERSION` env. Untagged build = `0.0.0` and no update check.
 
-## Contributing
+### 📚 Documentation
 
-Contributions are welcome: bug reports, fixes, features, tests and docs. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full step-by-step guide, from forking and cloning to opening a pull request, with every git command you need.
+Deep dives are in **[docs/TECHNICAL.md](docs/TECHNICAL.md)**:
+- Architecture (Clean Architecture, project map)
+- How peers stay in sync (mesh, ordering, desync detection)
+- Fair dice protocol in detail
+- Ports & discovery protocol
+- Screen-capture protection internals
+- Limitations & Roadmap
 
-## License
+### 🤝 Contributing
 
-DiceDrop is open source under the **[MIT License](LICENSE)**. You are free to use, copy, modify and distribute it, including commercially, as long as the copyright notice and license text are kept.
+Contributions welcome! Bug reports, fixes, tests, docs.
+
+1. Fork -> branch `feat/my-thing` -> `dotnet test`
+2. Open PR
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full git commands.
+
+Good first issues: turn timer, rule variants, reconnection, sounds.
+
+### 📜 License
+
+MIT — free for commercial use. Keep copyright notice. See [LICENSE](LICENSE).
+
+---
+
+<p align="center">Built with C# + WPF + a lot of UDP beacons. If you like it, ⭐ star the repo — it helps others find it.</p>
