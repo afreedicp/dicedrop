@@ -18,15 +18,24 @@ public sealed class MainViewModel : ObservableObject
     private Guid? _viewing;
     private Guid? _autoOpened;
 
-    internal MainViewModel(LudoApplication app, WpfSessionPresenter presenter, WpfDiagnosticLog diagnostics, CheckForUpdateUseCase checkForUpdate)
+    internal MainViewModel(
+        LudoApplication app,
+        WpfSessionPresenter presenter,
+        WpfDiagnosticLog diagnostics,
+        CheckForUpdateUseCase checkForUpdate,
+        UserSettings settings)
     {
+        App = app;
         Diagnostics = new DiagnosticsViewModel(diagnostics, ShowError);
         Update = new UpdateViewModel(checkForUpdate, ShowError);
 
-        // No setup screen: play under the Windows account name.
-        Searching = new SearchingViewModel(app.AutoLobby.Start(Environment.UserName));
+        // No setup screen: play under the saved name, or the Windows account name until one is saved.
+        Settings = new SettingsViewModel(app, settings, ShowError);
+        _ = Settings.ApplySavedProfileAsync();
+        Searching = new SearchingViewModel(app.AutoLobby.Start(settings.Name ?? Environment.UserName));
         Lobby = new LobbyViewModel(app, ShowError, ViewGame);
         Game = new GameViewModel(app, ShowError, Lobby, BackToLobby);
+        OpenSettingsCommand = new AsyncCommand(_ => { Settings.Open(Lobby.Me.Name.Length > 0 ? Lobby.Me.Name : Searching.PlayerName); return Task.CompletedTask; }, ShowError);
         DismissNoticeCommand = new AsyncCommand(_ => { Notice = null; return Task.CompletedTask; }, ShowError);
         OpenSourceCodeCommand = new AsyncCommand(_ => { ProjectLinks.OpenInBrowser(ProjectLinks.SourceCode); return Task.CompletedTask; }, ShowError);
 
@@ -36,7 +45,11 @@ public sealed class MainViewModel : ObservableObject
         _currentScreen = Searching;
     }
 
+    internal LudoApplication App { get; }
+
     public SearchingViewModel Searching { get; }
+
+    public SettingsViewModel Settings { get; }
 
     public DiagnosticsViewModel Diagnostics { get; }
 
@@ -60,6 +73,8 @@ public sealed class MainViewModel : ObservableObject
 
     public ICommand DismissNoticeCommand { get; }
 
+    public ICommand OpenSettingsCommand { get; }
+
     /// <summary>Opens the project's GitHub repository in the browser.</summary>
     public ICommand OpenSourceCodeCommand { get; }
 
@@ -76,6 +91,8 @@ public sealed class MainViewModel : ObservableObject
         {
             _viewing = null;
             Game.Clear();
+            Lobby.Clear();
+            Searching.PlayerName = Settings.Saved.Name ?? Searching.PlayerName;
             CurrentScreen = Searching;
             return;
         }
@@ -106,6 +123,13 @@ public sealed class MainViewModel : ObservableObject
         CurrentScreen = Game;
     }
 
+    /// <summary>Shows the lobby screen with a conversation open, e.g. after clicking a chat pop-up.</summary>
+    internal void OpenConversation(string key)
+    {
+        BackToLobby();
+        Lobby.OpenConversation(key);
+    }
+
     private void ViewGame()
     {
         if (_snapshot.Match is { Game: not null } match)
@@ -121,6 +145,6 @@ public sealed class MainViewModel : ObservableObject
         Refresh();
     }
 
-    private void ShowError(Exception error) =>
+    internal void ShowError(Exception error) =>
         Notice = error is SessionException ? error.Message : $"Something went wrong: {error.Message}";
 }

@@ -39,4 +39,8 @@ internal sealed class WpfSessionPresenter(Dispatcher dispatcher) : ISessionPrese
     public event Action<InviteView>? InviteReceived;
 
     public void PresentInvite(InviteView invite) => dispatcher.BeginInvoke(() => InviteReceived?.Invoke(invite));
+
+    public event Action<NudgeView>? NudgeReceived;
+
+    public void PresentNudge(NudgeView nudge) => dispatcher.BeginInvoke(() => NudgeReceived?.Invoke(nudge));
 }

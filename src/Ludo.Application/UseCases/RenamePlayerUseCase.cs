@@ -3,7 +3,7 @@ using Ludo.Application.Sync;
 
 namespace Ludo.Application.UseCases;
 
-/// <summary>Changes the local player's name while in the lobby. Nothing is saved: a restart uses the Windows account name again.</summary>
+/// <summary>Changes the local player's name. Outside a lobby it applies to the next lobby we find or open.</summary>
 public sealed class RenamePlayerUseCase
 {
     private readonly SessionContext _context;
@@ -21,7 +21,15 @@ public sealed class RenamePlayerUseCase
 
     public Task ExecuteAsync(string newName) => _executor.RunAsync(() =>
     {
-        _lobby.RenameLocal(newName);
+        if (_context.Stage == SessionStage.Idle)
+        {
+            _context.Rename(SessionContext.ValidateName(newName));
+        }
+        else
+        {
+            _lobby.RenameLocal(newName);
+        }
+
         _autoLobby.Rename(_context.LocalName);
         _context.Publish();
     });

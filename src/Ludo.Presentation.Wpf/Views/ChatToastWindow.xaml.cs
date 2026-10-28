@@ -6,9 +6,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
-using Ludo.Application.Session;
 using Ludo.Presentation.Wpf.Security;
-using Ludo.Presentation.Wpf.ViewModels;
 
 namespace Ludo.Presentation.Wpf.Views;
 
@@ -25,7 +23,7 @@ public partial class ChatToastWindow : ProtectedWindow
     private const int WsExNoActivate = 0x08000000;
     private static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(6);
 
-    private readonly ObservableCollection<ChatMessageItem> _lines = [];
+    private readonly ObservableCollection<ToastLine> _lines = [];
     private readonly DispatcherTimer _hideTimer;
     private bool _protectionFailed;
 
@@ -39,14 +37,14 @@ public partial class ChatToastWindow : ProtectedWindow
         ProtectionFailed += (_, _) => _protectionFailed = true;
     }
 
-    public void Push(ChatLineView line)
+    public void Push(ToastLine line)
     {
         if (_protectionFailed)
         {
             return;
         }
 
-        _lines.Add(new ChatMessageItem(line, StartsGroup: true, DateTime.Now));
+        _lines.Add(line);
         while (_lines.Count > MaxLines)
         {
             _lines.RemoveAt(0);
@@ -106,3 +104,6 @@ public partial class ChatToastWindow : ProtectedWindow
     [DllImport("user32.dll", EntryPoint = "SetWindowLongW")]
     private static extern int SetWindowLong(IntPtr window, int index, int value);
 }
+
+/// <param name="Color">Avatar colour; null falls back to the accent.</param>
+public sealed record ToastLine(string Initials, Brush? Color, ImageSource? Photo, string Title, string Text);
