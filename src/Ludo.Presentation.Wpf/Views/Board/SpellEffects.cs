@@ -480,15 +480,7 @@ internal static class SpellEffects
         switch (element)
         {
             case Element.Fire:
-                dc.PushOpacity(0.75 * (1 - t));
-                for (var i = 0; i < 5; i++)
-                {
-                    var spread = (i - 2) * 0.2;
-                    var centre = foot + new Vector(size * spread * (0.6 + t), -size * t * (0.5 + (0.12 * i)));
-                    var radius = size * (0.2 + (0.25 * t));
-                    dc.DrawEllipse(Ash, null, centre, radius, radius * 0.85);
-                }
-
+                dc.PushOpacity(1 - t);
                 for (var i = 0; i < 6; i++)
                 {
                     var ember = foot + new Vector((i - 2.5) * size * 0.18, -size * t * (0.8 + (0.1 * i)));
