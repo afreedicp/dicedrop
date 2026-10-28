@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Ludo.Application.Session;
 
 namespace Ludo.Presentation.Wpf.Views.Board;
@@ -31,6 +32,7 @@ public sealed class BoardCanvas : FrameworkElement
 
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly TokenAnimator _animator = new();
+    private readonly WizardPoses _poses = new();
     private readonly List<(Point Center, double Radius, int Token)> _targets = [];
     private BoardGeometry? _geometry;
     private Drawing? _board;
@@ -152,7 +154,8 @@ public sealed class BoardCanvas : FrameworkElement
             {
                 var pose = _animator.Pose(new TokenKey(seat.Seat, token.Index), p => geometry.PathPoint(seat, token.Index, p), now);
                 var finished = !pose.IsMoving && token.Location == TokenLocation.Finished;
-                pawns.Add(new Pawn(seat.Arm, token.Index, pose, finished ? 0.62 : 1, token.CanMove && canClick));
+                var sprite = _poses.Pick(new TokenKey(seat.Seat, token.Index), PawnPainter.PieceOf(token.Index), seat.Arm, pose.IsMoving, now);
+                pawns.Add(new Pawn(seat.Arm, token.Index, pose, finished ? 0.62 : 1, token.CanMove && canClick) { Sprite = sprite });
             }
         }
 
@@ -192,7 +195,6 @@ public sealed class BoardCanvas : FrameworkElement
 
             // A struck wizard is hit by the element of the spell that caught it; with no caster, its own colour.
             var element = SpellEffects.ElementOf(pose.SpellArm >= 0 ? pose.SpellArm : pawn.Arm);
-            var piece = PawnPainter.PieceOf(pawn.Token);
             if (pose.Burst >= 0)
             {
                 var impact = SpellEffects.Impact(element, pose.Burst);
@@ -200,7 +202,7 @@ public sealed class BoardCanvas : FrameworkElement
                 var alpha = Math.Min(pose.Alpha, impact.Alpha);
                 if (alpha > 0)
                 {
-                    PawnPainter.Draw(dc, foot + new Vector(impact.Drift * cell, 0), size, pawn.Arm, lift - (impact.Sink * cell), pose.Squash + impact.Squash, pose.Tilt + impact.Tilt, alpha, piece, impact.Pinch);
+                    PawnPainter.Draw(dc, foot + new Vector(impact.Drift * cell, 0), size, pawn.Sprite, lift - (impact.Sink * cell), pose.Squash + impact.Squash, pose.Tilt + impact.Tilt, alpha, impact.Pinch);
                 }
 
                 SpellEffects.DrawImpactFront(dc, element, foot, size, pose.Burst);
@@ -208,7 +210,7 @@ public sealed class BoardCanvas : FrameworkElement
             else if (pose.Alpha > 0)
             {
                 // A wizard hidden away after its spell is not drawn at all; only the aftermath remains.
-                PawnPainter.Draw(dc, foot, size, pawn.Arm, lift, pose.Squash, pose.Tilt, pose.Alpha, piece);
+                PawnPainter.Draw(dc, foot, size, pawn.Sprite, lift, pose.Squash, pose.Tilt, pose.Alpha);
             }
 
             if (pose.Aftermath >= 0)
@@ -303,6 +305,8 @@ public sealed class BoardCanvas : FrameworkElement
 
     private sealed class Pawn(int arm, int token, TokenPose pose, double scale, bool canMove)
     {
+        public required BitmapSource Sprite { get; init; }
+
         public int Arm { get; } = arm;
 
         public int Token { get; } = token;

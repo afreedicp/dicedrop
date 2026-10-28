@@ -5,29 +5,33 @@ using System.Windows.Media.Imaging;
 namespace Ludo.Presentation.Wpf.Views.Board;
 
 /// <summary>
-/// The wizard artwork: one pose per role from the sprite sheet, recoloured to the seat's colour. Only the
-/// purple robe takes the seat colour; the staff, trim, beard and glowing parts keep their own colours.
+/// The wizard artwork from the sprite sheets, recoloured to the seat's colour. Only the purple robe takes the
+/// seat colour; the staff, trim, beard and glowing parts keep their own colours.
 /// </summary>
 internal static class WizardSprites
 {
     private const int ArmSlots = 8;
 
-    private static readonly BitmapSource[] Bases =
-    [
-        Load("king"),
-        Load("queen"),
-        Load("bishop"),
-        Load("knight"),
-    ];
+    private static readonly Dictionary<(string Pose, int Slot), BitmapSource> Cache = [];
 
-    private static readonly BitmapSource?[,] Cache = new BitmapSource?[4, ArmSlots];
-
-    public static BitmapSource Get(Piece piece, int arm)
+    public static string StandPose(Piece piece) => piece switch
     {
-        var index = (int)piece;
-        var slot = arm % ArmSlots;
-        Cache[index, slot] ??= Recolour(Bases[index], SeatPalette.ColorOf(arm));
-        return Cache[index, slot]!;
+        Piece.King => "king",
+        Piece.Queen => "queen",
+        Piece.Bishop => "bishop",
+        _ => "knight",
+    };
+
+    public static BitmapSource Get(string pose, int arm)
+    {
+        var key = (pose, arm % ArmSlots);
+        if (!Cache.TryGetValue(key, out var sprite))
+        {
+            sprite = Recolour(Load(pose), SeatPalette.ColorOf(arm));
+            Cache[key] = sprite;
+        }
+
+        return sprite;
     }
 
     private static BitmapSource Load(string name)

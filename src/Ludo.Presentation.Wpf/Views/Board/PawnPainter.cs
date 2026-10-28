@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace Ludo.Presentation.Wpf.Views.Board;
 
@@ -34,7 +35,7 @@ internal static class PawnPainter
     /// <param name="tilt">Rotation about the feet in radians; negative topples the wizard to the left.</param>
     /// <param name="alpha">1 when fully visible; lower while a struck wizard fades out.</param>
     /// <param name="pinch">0 at rest; towards 1 the wizard is squeezed narrower, as by vines.</param>
-    public static void Draw(DrawingContext dc, Point foot, double size, int arm, double lift, double squash, double tilt, double alpha, Piece piece, double pinch = 0)
+    public static void Draw(DrawingContext dc, Point foot, double size, BitmapSource sprite, double lift, double squash, double tilt, double alpha, double pinch = 0)
     {
         var airborne = Math.Clamp(lift / size, 0, 1);
         var shadow = (1 - (airborne * 0.55)) * (1 + (squash * 0.15));
@@ -43,7 +44,6 @@ internal static class PawnPainter
         dc.Pop();
 
         // Rotate in unit space first so the wizard topples around its feet, then squash and place it.
-        var sprite = WizardSprites.Get(piece, arm);
         var aspect = sprite.PixelWidth / (double)sprite.PixelHeight;
         var transform = Matrix.Identity;
         transform.Rotate(tilt * 180 / Math.PI);

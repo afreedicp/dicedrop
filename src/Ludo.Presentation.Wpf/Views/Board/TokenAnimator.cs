@@ -225,23 +225,23 @@ internal sealed class TokenAnimator
         if (progress < timing.FlightEnd)
         {
             var incoming = progress < timing.ChargeEnd ? -1 : (progress - timing.ChargeEnd) / (timing.FlightEnd - timing.ChargeEnd);
-            return new TokenPose(square, 0, 0, true, Incoming: incoming);
+            return new TokenPose(square, 0, 0, false, Incoming: incoming);
         }
 
         if (progress < timing.ImpactEnd)
         {
             var impact = (progress - timing.FlightEnd) / (timing.ImpactEnd - timing.FlightEnd);
-            return new TokenPose(square, 0, 0, true, Burst: impact, SpellArm: motion.CasterArm);
+            return new TokenPose(square, 0, 0, false, Burst: impact, SpellArm: motion.CasterArm);
         }
 
         if (progress < timing.AftermathEnd)
         {
             var aftermath = (progress - timing.ImpactEnd) / (timing.AftermathEnd - timing.ImpactEnd);
-            return new TokenPose(square, 0, 0, true, Alpha: 0, Aftermath: aftermath, SpellArm: motion.CasterArm);
+            return new TokenPose(square, 0, 0, false, Alpha: 0, Aftermath: aftermath, SpellArm: motion.CasterArm);
         }
 
         var reset = (progress - timing.AftermathEnd) / (1 - timing.AftermathEnd);
-        return new TokenPose(path(-1), 0, 0, true, Alpha: Ease(reset), Pop: reset);
+        return new TokenPose(path(-1), 0, 0, false, Alpha: Ease(reset), Pop: reset);
     }
 
     private static double Ease(double t) => t * t * (3 - (2 * t));
