@@ -39,9 +39,12 @@ internal static class PawnPainter
     {
         var airborne = Math.Clamp(lift / size, 0, 1);
         var shadow = (1 - (airborne * 0.55)) * (1 + (squash * 0.15));
-        dc.PushOpacity((1 - (airborne * 0.5)) * alpha);
-        dc.DrawEllipse(ShadowBrush, null, foot, size * 0.3 * shadow, size * 0.1 * shadow);
-        dc.Pop();
+        if (alpha >= 1)
+        {
+            dc.PushOpacity(1 - (airborne * 0.5));
+            dc.DrawEllipse(ShadowBrush, null, foot, size * 0.3 * shadow, size * 0.1 * shadow);
+            dc.Pop();
+        }
 
         // Rotate in unit space first so the wizard topples around its feet, then squash and place it.
         var aspect = sprite.PixelWidth / (double)sprite.PixelHeight;

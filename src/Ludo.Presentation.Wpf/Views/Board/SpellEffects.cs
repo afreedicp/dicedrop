@@ -479,16 +479,6 @@ internal static class SpellEffects
     {
         switch (element)
         {
-            case Element.Fire:
-                dc.PushOpacity(1 - t);
-                for (var i = 0; i < 6; i++)
-                {
-                    var ember = foot + new Vector((i - 2.5) * size * 0.18, -size * t * (0.8 + (0.1 * i)));
-                    dc.DrawEllipse(Ember, null, ember, size * 0.04, size * 0.04);
-                }
-
-                dc.Pop();
-                break;
             case Element.Water:
                 for (var i = 0; i < 2; i++)
                 {
