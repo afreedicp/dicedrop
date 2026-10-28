@@ -1,11 +1,17 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using System.Windows.Media;
 using Ludo.Application;
 using Ludo.Application.Session;
 
 namespace Ludo.Presentation.Wpf.ViewModels;
 
-public sealed record LobbyMemberItem(string Name, string Tags, bool IsReady, bool InGame);
+public sealed record LobbyMemberItem(string Name, string Tags, bool IsReady, bool InGame)
+{
+    public string Initials => ChatMessageItem.InitialsOf(Name);
+
+    public Brush AvatarColor => ChatMessageItem.AvatarColorOf(Name);
+}
 
 /// <param name="Answer">"Started it", "In", "Out" or "…".</param>
 public sealed record InviteeItem(string Name, string Answer, bool IsIn);
@@ -70,10 +76,18 @@ public sealed class LobbyViewModel : ObservableObject
     public IReadOnlyList<LobbyMemberItem> Members
     {
         get => _members;
-        private set => SetProperty(ref _members, value);
+        private set
+        {
+            if (SetProperty(ref _members, value))
+            {
+                OnPropertyChanged(nameof(MemberCount));
+            }
+        }
     }
 
-    public ObservableCollection<ChatLineView> Chat { get; } = [];
+    public int MemberCount => Members.Count;
+
+    public ObservableCollection<ChatMessageItem> Chat { get; } = [];
 
     public string Status
     {
@@ -322,18 +336,29 @@ public sealed class LobbyViewModel : ObservableObject
         };
     }
 
-    /// <summary>Appends new lines in place so the chat keeps its scroll position; rebuilds only when history was trimmed or reset.</summary>
+    /// <summary>
+    /// Keeps the chat in place so it holds its scroll position and only new lines animate in: drops lines trimmed
+    /// from the front of the history, appends new ones, and rebuilds only when the history was replaced.
+    /// </summary>
     private void SyncChat(IReadOnlyList<ChatLineView> lines)
     {
-        var isContinuation = lines.Count >= Chat.Count && Chat.Select((line, i) => line == lines[i]).All(same => same);
-        if (!isContinuation)
+        var trimmed = Enumerable.Range(0, Chat.Count + 1)
+            .First(skip => skip == Chat.Count
+                || (Chat.Count - skip <= lines.Count && Chat.Skip(skip).Select((item, i) => item.Line == lines[i]).All(same => same)));
+        for (var i = 0; i < trimmed; i++)
         {
-            Chat.Clear();
+            Chat.RemoveAt(0);
+        }
+
+        if (Chat.Count > 0 && !Chat[0].StartsGroup)
+        {
+            Chat[0] = Chat[0] with { StartsGroup = true };
         }
 
         foreach (var line in lines.Skip(Chat.Count))
         {
-            Chat.Add(line);
+            var startsGroup = Chat.Count == 0 || Chat[^1].Sender != line.Sender || Chat[^1].IsLocal != line.IsLocal;
+            Chat.Add(new ChatMessageItem(line, startsGroup, DateTime.Now));
         }
     }
 }

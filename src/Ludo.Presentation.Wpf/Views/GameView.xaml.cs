@@ -31,13 +31,4 @@ public partial class GameView : UserControl
         roll.Execute(null);
         e.Handled = true;
     }
-
-    /// <summary>Follows new chat lines, unless the user has scrolled up to read older ones.</summary>
-    private void OnChatScrollChanged(object sender, ScrollChangedEventArgs e)
-    {
-        if (e.ExtentHeightChange > 0 && e.VerticalOffset + e.ViewportHeight >= e.ExtentHeight - e.ExtentHeightChange - 1)
-        {
-            ChatScroller.ScrollToEnd();
-        }
-    }
 }
