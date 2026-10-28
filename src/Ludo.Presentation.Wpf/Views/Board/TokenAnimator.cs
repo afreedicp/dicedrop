@@ -93,15 +93,16 @@ internal sealed class TokenAnimator
             }
         }
 
-        // The capturing wizard lands first; its spell is what knocks each victim back to the yard.
+        // Each spell resolves before its caster steps onto the square, so the victim is gone first.
         var caster = forward.FirstOrDefault();
         foreach (var victim in back)
         {
             victim.Caster = caster?.Key;
             victim.CasterArm = caster?.Arm ?? -1;
+            victim.CasterFrom = caster?.From ?? -1;
         }
 
-        foreach (var motion in forward.Concat(back))
+        foreach (var motion in back.Concat(forward))
         {
             _queue.Enqueue(motion);
         }
@@ -159,7 +160,7 @@ internal sealed class TokenAnimator
         {
             var timing = SpellEffects.TimingOf(SpellEffects.ElementOf(spell.CasterArm));
             var progress = Math.Clamp((now - _currentStart) / Duration(spell), 0, 1);
-            var square = path(_known.GetValueOrDefault(key, -1));
+            var square = path(spell.CasterFrom);
             if (progress < timing.ChargeEnd)
             {
                 return new TokenPose(square, 0, 0, false, Cast: progress / timing.ChargeEnd);
@@ -262,5 +263,8 @@ internal sealed class TokenAnimator
 
         /// <summary>The caster's seat colour (its element), or -1 when there is no caster.</summary>
         public int CasterArm { get; set; } = -1;
+
+        /// <summary>The caster's progress before its move, where it stands while the spell is cast.</summary>
+        public int CasterFrom { get; set; } = -1;
     }
 }

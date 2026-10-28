@@ -131,7 +131,7 @@ internal static class SpellEffects
         switch (element)
         {
             case Element.Fire:
-                DrawSprite(dc, SpellSprites.Fireball, tip, size * 1.2, Math.Atan2(to.Y - from.Y, to.X - from.X));
+                DrawSprite(dc, SpellSprites.Fireballs[(int)(t * 12) % SpellSprites.Fireballs.Length], tip, size * 1.2, Math.Atan2(to.Y - from.Y, to.X - from.X));
                 break;
             case Element.Water:
                 for (var i = 1; i <= 3; i++)
@@ -457,7 +457,7 @@ internal static class SpellEffects
             return;
         }
 
-        var sprite = SpellSprites.Flames;
+        var sprite = SpellSprites.Flames[(int)(t * 12) % SpellSprites.Flames.Length];
         var width = size * 1.6 * rise * (1 + (0.05 * Math.Sin(t * 30)));
         var height = width * sprite.PixelHeight / sprite.PixelWidth;
         dc.PushOpacity(fade);
