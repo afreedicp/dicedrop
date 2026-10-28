@@ -16,4 +16,7 @@ public interface ISessionPresenter
 
     /// <summary>Someone asked who wants to play; the next snapshot carries the invite too.</summary>
     void PresentInvite(InviteView invite);
+
+    /// <summary>Someone nudged us; the next snapshot carries the nudge line in their private conversation.</summary>
+    void PresentNudge(NudgeView nudge);
 }

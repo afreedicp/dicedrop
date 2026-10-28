@@ -21,6 +21,8 @@ public partial class App : System.Windows.Application
     private UdpLobbyDiscovery? _discovery;
     private LudoApplication? _app;
     private ChatToastController? _chatToasts;
+    private NudgeController? _nudges;
+    private QuickMessageWindow? _quickMessage;
     private SingleInstance? _instance;
     private TrayShell? _tray;
     private GitHubReleaseFeed? _releases;
@@ -58,7 +60,9 @@ public partial class App : System.Windows.Application
         _releases = new GitHubReleaseFeed(ProjectLinks.Owner, ProjectLinks.Repository, $"DiceDrop/{version.ToString(3)}");
         var checkForUpdate = new CheckForUpdateUseCase(_releases, version, diagnostics);
 
-        _viewModel = new MainViewModel(_app, presenter, diagnostics, checkForUpdate);
+        var settings = UserSettings.Load();
+        _viewModel = new MainViewModel(_app, presenter, diagnostics, checkForUpdate, settings);
+        var viewModel = _viewModel;
         var window = new MainWindow { DataContext = _viewModel };
         window.ProtectionFailed += (_, _) =>
         {
@@ -71,8 +75,14 @@ public partial class App : System.Windows.Application
             _tray?.Exit(2);
         };
 
-        _tray = new TrayShell(window, presenter, Shutdown);
-        _chatToasts = new ChatToastController(window, presenter);
+        _tray = new TrayShell(window, presenter, Shutdown, OpenQuickMessage);
+        _chatToasts = new ChatToastController(
+            window,
+            presenter,
+            () => viewModel.Settings.Saved,
+            viewModel.Lobby.FindPerson,
+            viewModel.OpenConversation);
+        _nudges = new NudgeController(window, presenter, () => viewModel.Settings.Saved);
         _instance.ListenForActivation(() => Dispatcher.BeginInvoke(window.BringToFront));
         StartupRegistration.RefreshPath();
         MainWindow = window;
@@ -84,6 +94,27 @@ public partial class App : System.Windows.Application
         }
 
         _viewModel.Update.Start();
+    }
+
+    /// <summary>The tray's "Send message" window; one at a time.</summary>
+    private void OpenQuickMessage()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (_quickMessage is { IsVisible: true })
+        {
+            _quickMessage.Activate();
+            return;
+        }
+
+        var window = new QuickMessageWindow();
+        window.DataContext = new QuickMessageViewModel(_app!, _viewModel.Lobby, _viewModel.ShowError, window.CloseOnce);
+        window.Closed += (_, _) => _quickMessage = null;
+        _quickMessage = window;
+        window.Show();
     }
 
     protected override void OnExit(ExitEventArgs e)

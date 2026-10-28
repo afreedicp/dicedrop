@@ -16,9 +16,11 @@ namespace Ludo.Application.Sync;
 /// </summary>
 internal sealed class MatchProtocol(SessionContext context, GameplayProtocol gameplay)
 {
-    public void ProposeLocal()
+    /// <param name="inviteeKeys">Members who may join; null or empty invites everyone in the lobby.</param>
+    public void ProposeLocal(string gameId, IReadOnlyCollection<string>? inviteeKeys)
     {
         RequireLobby();
+        var game = GameCatalog.Find(gameId) ?? throw new SessionException("That game is not available.");
         if (context.Match is { IsActive: true })
         {
             throw new SessionException("A game is already being set up or played in this lobby.");
@@ -29,11 +31,30 @@ internal sealed class MatchProtocol(SessionContext context, GameplayProtocol gam
             throw new SessionException("Wait for someone else to join the lobby first.");
         }
 
-        var match = new MatchState(Guid.NewGuid(), context.LocalId) { Chain = HashChain.Create(context.Crypto) };
+        HashSet<PlayerId>? invitees = null;
+        if (inviteeKeys is { Count: > 0 })
+        {
+            invitees = inviteeKeys
+                .Select(SessionContext.FindByKey)
+                .OfType<PlayerId>()
+                .Where(id => id != context.LocalId && context.Roster.Exists(r => r.Id == id))
+                .ToHashSet();
+            if (invitees.Count == 0)
+            {
+                throw new SessionException("Those players are no longer in the lobby.");
+            }
+
+            if (invitees.Count + 1 > game.MaxPlayers)
+            {
+                throw new SessionException($"{game.Name} takes at most {game.MaxPlayers} players.");
+            }
+        }
+
+        var match = new MatchState(Guid.NewGuid(), context.LocalId, game.Id, invitees) { Chain = HashChain.Create(context.Crypto) };
         match.Replies[context.LocalId] = new MatchReply(true, match.Chain.Anchor);
         context.Match = match;
-        context.Network.Broadcast(new MatchProposalMessage(match.Id, match.Chain.Anchor));
-        context.AddLog("You asked who wants to play.");
+        context.Network.Broadcast(ProposalOf(match));
+        context.AddLog(invitees is null ? $"You asked who wants to play {game.Name}." : $"You invited {string.Join(", ", invitees.Select(context.NameOf))} to {game.Name}.");
     }
 
     public void AnswerLocal(bool accept)
@@ -46,6 +67,11 @@ internal sealed class MatchProtocol(SessionContext context, GameplayProtocol gam
         if (match.Initiator == context.LocalId)
         {
             throw new SessionException("You started this invite.");
+        }
+
+        if (!match.IsInvited(context.LocalId))
+        {
+            throw new SessionException("You were not invited to this game, but you can watch it.");
         }
 
         match.Chain = accept ? HashChain.Create(context.Crypto) : null;
@@ -115,7 +141,9 @@ internal sealed class MatchProtocol(SessionContext context, GameplayProtocol gam
     public DispatchResult OnProposal(PlayerId from, MatchProposalMessage proposal)
     {
         if (!IsGreeted(from) || proposal.ChainAnchor is not { Length: HashChain.ValueLength }
-            || context.PastMatches.Contains(proposal.MatchId))
+            || context.PastMatches.Contains(proposal.MatchId)
+            || GameCatalog.Find(proposal.GameId) is not { } game
+            || proposal.Invitees is { Count: 0 or > SessionContext.MaxPlayers })
         {
             return DispatchResult.Ignored;
         }
@@ -142,12 +170,19 @@ internal sealed class MatchProtocol(SessionContext context, GameplayProtocol gam
             Supersede(current, $"{context.NameOf(from)} asked first, so your invite was withdrawn.");
         }
 
-        var match = new MatchState(proposal.MatchId, from);
+        var match = new MatchState(proposal.MatchId, from, game.Id, proposal.Invitees?.ToHashSet());
         match.Replies[from] = new MatchReply(true, proposal.ChainAnchor);
         context.Match = match;
         var name = context.NameOf(from);
-        context.AddLog($"{name} wants to play.");
-        context.Presenter.PresentInvite(new InviteView(match.Id, name));
+        if (match.IsInvited(context.LocalId))
+        {
+            context.AddLog($"{name} wants to play {game.Name}.");
+            context.Presenter.PresentInvite(new InviteView(match.Id, name, game.Name));
+        }
+        else
+        {
+            context.AddLog($"{name} is setting up a game of {game.Name}.");
+        }
         return DispatchResult.Handled;
     }
 
@@ -158,7 +193,7 @@ internal sealed class MatchProtocol(SessionContext context, GameplayProtocol gam
             return Unknown(reply.MatchId);
         }
 
-        if (match.Phase != MatchPhase.Inviting || from == match.Initiator || !IsGreeted(from)
+        if (match.Phase != MatchPhase.Inviting || from == match.Initiator || !IsGreeted(from) || !match.IsInvited(from)
             || (reply.Accepted && reply.ChainAnchor is not { Length: HashChain.ValueLength }))
         {
             return DispatchResult.Ignored;
@@ -250,7 +285,7 @@ internal sealed class MatchProtocol(SessionContext context, GameplayProtocol gam
                 Supersede(current, "A game is already running, so your invite was withdrawn.");
             }
 
-            match = new MatchState(replay.MatchId, from);
+            match = new MatchState(replay.MatchId, from, GameCatalog.Find(replay.GameId)?.Id ?? GameCatalog.Ludo.Id, invitees: null);
         }
         else if (from != match.Initiator || match.IsPlaying || !match.IsActive)
         {
@@ -359,7 +394,7 @@ internal sealed class MatchProtocol(SessionContext context, GameplayProtocol gam
         // Every player sends its own commitment, so the newcomer can check the start message against it.
         if (match.Initiator == context.LocalId)
         {
-            context.Network.Send(member, new MatchProposalMessage(match.Id, match.Chain!.Anchor));
+            context.Network.Send(member, ProposalOf(match));
         }
         else if (match.Replies.TryGetValue(context.LocalId, out var reply) && reply.Accepted)
         {
@@ -463,7 +498,7 @@ internal sealed class MatchProtocol(SessionContext context, GameplayProtocol gam
     }
 
     private void SendReplay(PlayerId peer, MatchState match) =>
-        context.Network.Send(peer, new MatchReplayMessage(match.Id, match.Rules, match.Seats, match.History.ToArray()));
+        context.Network.Send(peer, new MatchReplayMessage(match.Id, match.GameId, match.Rules, match.Seats, match.History.ToArray()));
 
     private void RequestReplay(MatchState match)
     {
@@ -500,6 +535,9 @@ internal sealed class MatchProtocol(SessionContext context, GameplayProtocol gam
                 throw new DomainException("Unknown step.");
         }
     }
+
+    private static MatchProposalMessage ProposalOf(MatchState match) =>
+        new(match.Id, match.Chain!.Anchor, match.GameId, match.Invitees?.ToArray());
 
     private MatchState? Find(Guid matchId) => context.Match is { } match && match.Id == matchId ? match : null;
 

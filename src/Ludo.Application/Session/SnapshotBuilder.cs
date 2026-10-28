@@ -17,11 +17,13 @@ internal static class SnapshotBuilder
         var running = match is { Phase: MatchPhase.Playing };
         var members = context.Roster
             .Select(r => new MemberView(
+                SessionContext.KeyOf(r.Id),
                 r.Name,
                 r.Id == context.HostId,
                 r.Id == context.LocalId,
                 r.Ready,
-                running && match!.IsActivePlayer(r.Id)))
+                running && match!.IsActivePlayer(r.Id),
+                ToView(context.ProfileOf(r.Id))))
             .ToArray();
         var canPropose = match is not { IsActive: true } && context.Roster.Count >= BoardTopology.MinPlayers;
         var joinAddresses = context.IsHost
@@ -37,20 +39,30 @@ internal static class SnapshotBuilder
             joinAddresses,
             match is null ? null : BuildMatch(context, match),
             context.Log.ToArray(),
-            context.Chat.ToArray());
+            context.Chat.ToArray(),
+            context.DirectChats
+                .Select(d => new DirectChatView(
+                    SessionContext.KeyOf(d.Key),
+                    context.NameOf(d.Key),
+                    context.Peers.TryGetValue(d.Key, out var peer) && peer.IsGreeted,
+                    d.Value.ToArray()))
+                .ToArray(),
+            SessionContext.KeyOf(context.LocalId));
     }
 
     private static MatchView BuildMatch(SessionContext context, MatchState match)
     {
         var isInitiator = match.Initiator == context.LocalId;
         var invitees = context.Roster
-            .Select(r => new MatchMemberView(r.Name, r.Id == match.Initiator, r.Id == context.LocalId, AnswerOf(match, r.Id)))
+            .Where(r => match.IsInvited(r.Id))
+            .Select(r => new MatchMemberView(SessionContext.KeyOf(r.Id), r.Name, r.Id == match.Initiator, r.Id == context.LocalId, AnswerOf(match, r.Id)))
             .ToArray();
         var accepted = context.AcceptedPlayers();
         var canStart = isInitiator && match.Phase == MatchPhase.Inviting && accepted.Count > 0 && accepted.TrueForAll(p => p.Ready);
 
         return new MatchView(
             match.Id,
+            GameCatalog.Find(match.GameId) ?? GameCatalog.Ludo,
             context.NameOf(match.Initiator),
             isInitiator,
             match.Phase switch
@@ -61,12 +73,15 @@ internal static class SnapshotBuilder
                 _ => MatchPhaseView.Stopped,
             },
             AnswerOf(match, context.LocalId),
+            match.IsInvited(context.LocalId),
             match.IsPlaying,
             invitees,
             canStart,
             match.EndReason,
             match.Game is { } game ? BuildGame(context, match, game) : null);
     }
+
+    private static ProfileView ToView(Protocol.PlayerProfile profile) => new(profile.Color, profile.Photo);
 
     private static InviteAnswer AnswerOf(MatchState match, PlayerId id) =>
         match.Replies.TryGetValue(id, out var reply)

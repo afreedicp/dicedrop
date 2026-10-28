@@ -3,8 +3,9 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
-using Ludo.Application.Session;
 using Ludo.Presentation.Wpf.Security;
 
 namespace Ludo.Presentation.Wpf.Views;
@@ -22,7 +23,7 @@ public partial class ChatToastWindow : ProtectedWindow
     private const int WsExNoActivate = 0x08000000;
     private static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(6);
 
-    private readonly ObservableCollection<ChatLineView> _lines = [];
+    private readonly ObservableCollection<ToastLine> _lines = [];
     private readonly DispatcherTimer _hideTimer;
     private bool _protectionFailed;
 
@@ -36,7 +37,7 @@ public partial class ChatToastWindow : ProtectedWindow
         ProtectionFailed += (_, _) => _protectionFailed = true;
     }
 
-    public void Push(ChatLineView line)
+    public void Push(ToastLine line)
     {
         if (_protectionFailed)
         {
@@ -54,6 +55,7 @@ public partial class ChatToastWindow : ProtectedWindow
         if (!IsVisible)
         {
             Show();
+            SlideIn();
         }
     }
 
@@ -73,6 +75,22 @@ public partial class ChatToastWindow : ProtectedWindow
         SetWindowLong(handle, GwlExStyle, GetWindowLong(handle, GwlExStyle) | WsExToolWindow | WsExNoActivate);
     }
 
+    /// <summary>The content glides in from the screen edge when the toast appears.</summary>
+    private void SlideIn()
+    {
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            return;
+        }
+
+        var duration = TimeSpan.FromMilliseconds(320);
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var shift = new TranslateTransform();
+        Body.RenderTransform = shift;
+        shift.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(40, 0, duration) { EasingFunction = ease });
+        Body.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duration) { EasingFunction = ease });
+    }
+
     private void PlaceInCorner()
     {
         var area = SystemParameters.WorkArea;
@@ -86,3 +104,6 @@ public partial class ChatToastWindow : ProtectedWindow
     [DllImport("user32.dll", EntryPoint = "SetWindowLongW")]
     private static extern int SetWindowLong(IntPtr window, int index, int value);
 }
+
+/// <param name="Color">Avatar colour; null falls back to the accent.</param>
+public sealed record ToastLine(string Initials, Brush? Color, ImageSource? Photo, string Title, string Text);
