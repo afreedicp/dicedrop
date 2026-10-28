@@ -33,6 +33,7 @@
 
   <ItemGroup>
     <Resource Include="Assets\Wizards\*.png" />
+    <Resource Include="Assets\Spells\*.png" />
   </ItemGroup>
 
   <ItemGroup>

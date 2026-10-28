@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace Ludo.Presentation.Wpf.Views.Board;
 
@@ -40,12 +41,8 @@ internal static class SpellEffects
     private const int Rays = 8;
     private const int VineCount = 3;
     private const int VineSteps = 36;
-    private const int FlameCount = 7;
 
     private static readonly Brush Bark = Frozen(new SolidColorBrush(Color.FromRgb(0x4A, 0x32, 0x1C)));
-    private static readonly Brush FlameRed = Frozen(new SolidColorBrush(Color.FromRgb(0xD7, 0x26, 0x1E)));
-    private static readonly Brush FlameOrange = Frozen(new SolidColorBrush(Color.FromRgb(0xFF, 0x7A, 0x1A)));
-    private static readonly Brush FlameYellow = Frozen(new SolidColorBrush(Color.FromRgb(0xFF, 0xE2, 0x7A)));
     private static readonly Brush Scorch = Frozen(new SolidColorBrush(Color.FromArgb(0xB0, 0x3A, 0x0E, 0x06)));
     private static readonly Brush WaveBlue = Frozen(new SolidColorBrush(Color.FromRgb(0x2A, 0x7F, 0xD6)));
     private static readonly Brush SunGlow = Orb(Colors.White, Color.FromRgb(0xFF, 0xD8, 0x5A));
@@ -134,12 +131,7 @@ internal static class SpellEffects
         switch (element)
         {
             case Element.Fire:
-                for (var i = 3; i >= 1; i--)
-                {
-                    dc.DrawEllipse(Ember, null, Lerp(from, to, Math.Max(0, t - (i * 0.08))), size * (0.22 - (i * 0.04)), size * (0.22 - (i * 0.04)));
-                }
-
-                dc.DrawEllipse(FireOrb, null, tip, size * 0.22, size * 0.22);
+                DrawSprite(dc, SpellSprites.Fireball, tip, size * 1.2, Math.Atan2(to.Y - from.Y, to.X - from.X));
                 break;
             case Element.Water:
                 for (var i = 1; i <= 3; i++)
@@ -455,10 +447,7 @@ internal static class SpellEffects
         }
     }
 
-    /// <summary>
-    /// Flames that engulf the wizard: tongues of red, orange and yellow flicker and lick upward, then die down
-    /// as the wizard is gone. Drawn over the wizard.
-    /// </summary>
+    /// <summary>The red fire that engulfs the wizard, rising from the square as the wizard burns. Drawn over the wizard.</summary>
     private static void DrawFlames(DrawingContext dc, Point foot, double size, double t)
     {
         var rise = Ease(Math.Clamp(t / 0.35, 0, 1));
@@ -468,37 +457,21 @@ internal static class SpellEffects
             return;
         }
 
+        var sprite = SpellSprites.Flames;
+        var width = size * 1.6 * rise * (1 + (0.05 * Math.Sin(t * 30)));
+        var height = width * sprite.PixelHeight / sprite.PixelWidth;
         dc.PushOpacity(fade);
-        for (var i = 0; i < FlameCount; i++)
-        {
-            var spread = (i - ((FlameCount - 1) / 2.0)) / FlameCount;
-            var flicker = 0.8 + (0.2 * Math.Sin((t * 30) + (i * 1.7)));
-            var height = size * (1.5 - (Math.Abs(spread) * 0.8)) * rise * flicker;
-            var width = size * 0.2;
-            var sway = Math.Sin((t * 18) + i) * size * 0.08;
-            var baseCentre = foot + new Vector(spread * size, size * 0.05);
-            dc.DrawGeometry(FlameRed, null, Tongue(baseCentre, width, height, sway));
-            dc.DrawGeometry(FlameOrange, null, Tongue(baseCentre, width * 0.65, height * 0.75, sway * 0.7));
-            dc.DrawGeometry(FlameYellow, null, Tongue(baseCentre, width * 0.3, height * 0.45, sway * 0.4));
-        }
-
+        DrawSprite(dc, sprite, foot - new Vector(0, height / 2), width, 0);
         dc.Pop();
     }
 
-    /// <summary>One tongue of flame, rising from a base point and leaning with <paramref name="sway"/> at its tip.</summary>
-    private static Geometry Tongue(Point baseCentre, double width, double height, double sway)
+    /// <summary>Draws a sprite centred on <paramref name="centre"/>, turned by <paramref name="angle"/> radians.</summary>
+    private static void DrawSprite(DrawingContext dc, BitmapSource sprite, Point centre, double width, double angle)
     {
-        var tip = baseCentre + new Vector(sway, -height);
-        var geometry = new StreamGeometry();
-        using (var ctx = geometry.Open())
-        {
-            ctx.BeginFigure(baseCentre + new Vector(-width, 0), isFilled: true, isClosed: true);
-            ctx.BezierTo(baseCentre + new Vector(-width * 1.3, -height * 0.4), baseCentre + new Vector((sway * 0.5) - (width * 0.5), -height * 0.8), tip, isStroked: true, isSmoothJoin: true);
-            ctx.BezierTo(baseCentre + new Vector((sway * 0.5) + (width * 0.5), -height * 0.8), baseCentre + new Vector(width * 1.3, -height * 0.4), baseCentre + new Vector(width, 0), isStroked: true, isSmoothJoin: true);
-        }
-
-        geometry.Freeze();
-        return geometry;
+        var height = width * sprite.PixelHeight / sprite.PixelWidth;
+        dc.PushTransform(new RotateTransform(angle * 180 / Math.PI, centre.X, centre.Y));
+        dc.DrawImage(sprite, new Rect(centre.X - (width / 2), centre.Y - (height / 2), width, height));
+        dc.Pop();
     }
 
     /// <summary>What lingers on the square after the impact, at <paramref name="t"/> (0 to 1).</summary>
