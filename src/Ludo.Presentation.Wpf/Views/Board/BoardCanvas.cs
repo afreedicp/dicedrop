@@ -242,9 +242,7 @@ public sealed class BoardCanvas : FrameworkElement
 
             if (caster.Pose.Blast >= 0 && target is not null)
             {
-                // Light's sun starts in the sky above its target; every other element flies from the caster's hand.
-                var from = element == Element.Light ? new Point(target.Head.X, target.Head.Y - (caster.Size * 8)) : hand;
-                SpellEffects.DrawProjectile(dc, element, from, target.Head, caster.Size, caster.Pose.Blast);
+                SpellEffects.DrawProjectile(dc, element, hand, target.Head, caster.Size, caster.Pose.Blast);
             }
         }
     }
