@@ -36,9 +36,9 @@ This guide walks you through the whole process from a fresh machine to a merged 
 | Improve documentation | Edit the `.md` files directly; the same branch → pull request flow applies. |
 | Test | Play a LAN game with several PCs and report anything odd. Multi-PC testing is the hardest thing for maintainers to do alone. |
 
-Looking for a first task? Check issues labelled **good first issue**, or pick something from "Possible next steps" in the [README](README.md#limitations-and-ideas): turn timer, rule variants in the lobby, sound.
+Looking for a first task? Check issues labelled **good first issue**, or pick something from the roadmap in [docs/TECHNICAL.md](docs/TECHNICAL.md#7-limitations--roadmap): turn timer, rule variants in the lobby, reconnection, sound effects.
 
-> **Never post a security problem in a public issue.** If you find a way to defeat screen-capture protection, cheat the fair dice, or crash other peers over the network, contact the maintainers privately through GitHub (the repository's **Security** tab → **Report a vulnerability**).
+> **Never post a security problem in a public issue.** If you find a way to defeat screen-capture protection, cheat the fair dice, or crash other peers over the network, report it privately as described in [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -372,7 +372,7 @@ Before you mark it ready for review:
 - [ ] The branch is rebased on the latest `upstream/main`
 - [ ] Tested in a real multiplayer game if networking, sync or UI changed
 - [ ] The [project rules](#11-project-rules-you-must-follow) are respected
-- [ ] README updated if behaviour, ports or build steps changed
+- [ ] README / [docs/TECHNICAL.md](docs/TECHNICAL.md) updated if behaviour, ports, protocol or build steps changed
 
 ---
 
@@ -398,7 +398,7 @@ To pick up a reviewer's suggestion you accepted on GitHub, pull it into your loc
 git pull
 ```
 
-When every conversation is resolved and checks pass, a maintainer will merge it.
+Every pull request runs the **CI** workflow (build with warnings as errors, then all tests). When every conversation is resolved and CI is green, a maintainer will merge it.
 
 ---
 
@@ -473,7 +473,7 @@ Every peer runs the same rules on its own copy of the game (deterministic lockst
 
 - Anything that changes game state must be **deterministic**: identical inputs → identical results on every PC. No `Random`, no local clock, no dictionary-order dependence in Domain.
 - Dice come only from the fair-dice hash chain (`FairDice/`). Never add another source of randomness to gameplay.
-- Changing the wire format (`PeerMessages`, serializer, beacon) breaks compatibility with older builds. Call it out clearly in your pull request.
+- Changing the wire format (`PeerMessages`, serializer, beacon) breaks compatibility with older builds. Bump `ProtocolInfo.Version` and call it out clearly in your pull request.
 
 ### 11.5 Portable single exe
 
@@ -489,7 +489,7 @@ DiceDrop ships as one self-contained `DiceDrop.exe` with no installer, no admin 
 - Match the surrounding code: file-scoped namespaces, `sealed` classes by default, `_camelCase` private fields, `PascalCase` members, `var` where the type is obvious.
 - Comments explain **why**, not what. Keep them short.
 - Domain and Application changes come with **xUnit tests** in `tests/`. Name tests after the behaviour, for example `Six_brings_token_out_of_base`.
-- Keep the README's architecture and protocol sections accurate when you change those areas.
+- Keep the architecture and protocol sections of [docs/TECHNICAL.md](docs/TECHNICAL.md) accurate when you change those areas.
 
 ---
 

@@ -1,6 +1,6 @@
 # DiceDrop Technical Documentation
 
-This document is for contributors and curious engineers. For user guide, see [README.md](../README.md).
+This document is for contributors and curious engineers. For the user guide, see [README.md](../README.md); for how to contribute, see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## 1. Architecture — Clean Architecture
 
@@ -15,11 +15,15 @@ Presentation.Wpf ──► Application ──► Domain
 | Project | Responsibility | May depend on |
 |---|---|---|
 | `Ludo.Domain` | Entities & rules: `LudoGame` aggregate, N-player `BoardTopology` (≥4 arms), `GameRules`, domain events. Pure, deterministic, no I/O/time/randomness. | nothing |
-| `Ludo.Application` | Use cases (`AutoLobby`, `HostLobby`, `JoinLobby`, `ProposeGame`, `AcceptInvite`, `StartGame`, `RollDice`, `MoveToken`, `LeaveGame`, `StopGame`, `LeaveSession`), ports (`IPeerNetwork`, `ILobbyDiscovery`, `ICryptoProvider`, `ISessionPresenter`), sync protocol + fair dice. | Domain |
-| `Ludo.Infrastructure` | Adapters: TCP mesh transport, UDP LAN discovery, SHA-256/CSPRNG, JSON wire format. | Application |
-| `Ludo.Presentation.Wpf` | MVVM UI, board renderer, capture protection, composition root `App.xaml.cs` — only place that knows all layers. | Application, Infrastructure |
+| `Ludo.Application` | Use cases exposed by `LudoApplication`: lobby (`AutoLobby`, `HostLobby`, `JoinLobby`, `LeaveSession`), games (`ProposeGame`, `AcceptInvite`/`DeclineInvite`, `StartGame`, `LeaveGame`, `StopGame`, `RollDice`, `MoveToken`), messenger (`SendChat`, `SendDirectChat`, `Nudge`, `RenamePlayer`, `UpdateProfile`) and `CheckForUpdate`. Ports (`IPeerNetwork`, `ILobbyDiscovery`, `ICryptoProvider`, `ISessionPresenter`, `IReleaseFeed`, `IDiagnosticLog`), the sync protocol and fair dice. | Domain |
+| `Ludo.Infrastructure` | Adapters: TCP mesh transport, UDP LAN discovery, SHA-256/CSPRNG, JSON wire format, GitHub release feed, network/firewall diagnostics. | Application |
+| `Ludo.Presentation.Wpf` | MVVM UI, board renderer, capture protection, tray icon, settings, composition root `App.xaml.cs` — only place that knows all layers. | Application, Infrastructure |
 
 UI never touches domain. It receives immutable read models `SessionSnapshot` via `ISessionPresenter`.
+
+The wire protocol is versioned (`ProtocolInfo.Version`, currently **3**: profiles, private chat, nudges, game invites). Peers on a different version can't join each other's lobbies, so any change to `PeerMessages`, the serializer or the beacon must bump it.
+
+**Transport security:** peer traffic is plain JSON over TCP on the local network. It is not encrypted or authenticated beyond the game handshake; fair dice and lockstep validation protect game integrity, not confidentiality.
 
 ## 2. How Peers Stay in Sync
 
@@ -96,13 +100,18 @@ Defeats: PrintScreen, Snipping Tool / Win+Shift+S, Xbox Game Bar, OBS, ShareX, T
 ## 6. Build & Release Pipeline
 
 ```
-build.cmd -> dotnet test -> dotnet publish self-contained win-x64 -> dist\DiceDrop.exe
-Version: newest vX.Y.Z tag behind current commit or DICEDROP_VERSION env, else 0.0.0
-Update check: GitHub API latest release on startup + every 6h, banner -> opens release page, no auto-download
+build.cmd -> dotnet test -> dotnet publish self-contained single-file win-x64 -> dist\DiceDrop.exe (~66 MB)
+Version: DICEDROP_VERSION env, else newest vX.Y.Z tag behind current commit, else 0.0.0
+Update check: GitHub API latest release on startup + every 6h, banner -> opens release page, no auto-download.
+              Skipped for 0.0.0 builds; fails quietly offline (reason in network log).
 Settings: %APPDATA%\DiceDrop\settings.json
-Startup: per-user startup entry
+Startup: optional, HKCU\Software\Microsoft\Windows\CurrentVersion\Run (only when "Start with Windows" is on)
 Photos: shrunk to small JPEG, shared only with lobby
 ```
+
+**CI** (`.github/workflows/ci.yml`): every push to `main` and every pull request runs `dotnet build` (warnings are errors) and `dotnet test` on `windows-latest`.
+
+**Release** (`.github/workflows/release.yml`): triggered by pushing a `v*` tag or by a manual run with a version. It rejects anything that isn't a strictly increasing `vMAJOR.MINOR.PATCH`, then tests, publishes, and creates a GitHub release with `DiceDrop.exe` and `DiceDrop.exe.sha256` and auto-generated notes.
 
 ## 7. Limitations & Roadmap
 
@@ -114,5 +123,5 @@ Photos: shrunk to small JPEG, shared only with lobby
 ## 8. Testing
 
 - Domain: pure unit tests, deterministic board topology for 2-8 players
-- Application: use-case tests with fake ports
+- Application: fair dice and update-check tests, plus multi-peer session tests that run real `TcpPeerNetwork` instances over loopback with scripted discovery
 - Run: `dotnet test DiceDrop.slnx` or `build.cmd`

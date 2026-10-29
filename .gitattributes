@@ -1,0 +1,5 @@
+# Normalise line endings in the repo; check out Windows scripts with CRLF so cmd.exe parses them reliably.
+* text=auto
+*.cmd text eol=crlf
+*.png binary
+*.ico binary

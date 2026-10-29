@@ -1,0 +1,31 @@
+# Builds and tests every push to main and every pull request. Warnings fail the build (TreatWarningsAsErrors).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build
+        run: dotnet build DiceDrop.slnx -c Release
+
+      - name: Test
+        run: dotnet test DiceDrop.slnx -c Release --no-build
